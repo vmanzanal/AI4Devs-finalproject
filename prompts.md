@@ -17,10 +17,20 @@ Puedes añadir adicionalmente la conversación completa como link o archivo adju
 ## 1. Descripción general del producto
 
 **Prompt 1:**
+Actúa como product architect en una sesión de BrainStorming para planificar el desarrollo de esta aplicación y definir el stack tecnológico. En base a las especificaciones del fichero ["Aplicación_comparador plantillas SEPE.md"](docs/Aplicación_comparador%20plantillas%20SEPE.md) define el stack tecnológico y la metodología asistida por IA para comenzar el desarrollo de la aplicación "comparación plantillas SEPE"
+
+Salida del prompt: [Resumen y Objetivos del Proyecto.md](docs/Resumen%20y%20Objetivos%20del%20Proyecto.md)
+
+***Este brainstorming inicial se realizó en ChatGPT 5 y Gemini 2.5, los resultados en Gemini 2.5 fueron mejores (no lo esperaba)***
+
 
 **Prompt 2:**
+***Previo a la ejecución del prompt se instaló la estructura de [agent-os](https://buildermethods.com/agent-os)***
+/plan-product based on the high level specifications described in @Resumen y Objetivos del Proyecto.md  and  @.agent-os/ 
+
 
 **Prompt 3:**
+
 
 ---
 

@@ -14,18 +14,26 @@
 ## 0. Ficha del proyecto
 
 ### **0.1. Tu nombre completo:**
+Victoria Manzanal Carmona
+
 
 ### **0.2. Nombre del proyecto:**
 
+***Comparador de plantillas SEPE***
+
 ### **0.3. Descripción breve del proyecto:**
 
-### **0.4. URL del proyecto:**
+El objetivo es construir una **aplicación de comparación de plantillas del SEPE** para el equipo de arquitectura de producto. El enfoque principal es la **velocidad de desarrollo** para obtener un producto mínimo viable (MVP) rápidamente usando las capacidades agénticas de la IA, utilizando un stack que se alinee con las capacidades del equipo. 
 
+***Objetivo adicional:*** testear metedologías de desarrollo con IA: agent-os y memory-bank para construir un proceso interno de desarrollo con IA.
+
+### **0.4. URL del proyecto:**
+*Por definir*
 > Puede ser pública o privada, en cuyo caso deberás compartir los accesos de manera segura. Puedes enviarlos a [alvaro@lidr.co](mailto:alvaro@lidr.co) usando algún servicio como [onetimesecret](https://onetimesecret.com/).
 
 ### 0.5. URL o archivo comprimido del repositorio
+https://github.com/vmanzanal/AI4Devs-finalproject
 
-> Puedes tenerlo alojado en público o en privado, en cuyo caso deberás compartir los accesos de manera segura. Puedes enviarlos a [alvaro@lidr.co](mailto:alvaro@lidr.co) usando algún servicio como [onetimesecret](https://onetimesecret.com/). También puedes compartir por correo un archivo zip con el contenido
 
 
 ---
@@ -36,17 +44,35 @@
 
 ### **1.1. Objetivo:**
 
-> Propósito del producto. Qué valor aporta, qué soluciona, y para quién.
+***Propósito:*** El objetivo es construir un comparador que nos permita gestionar de manera más eficiente los cambios anárquicos en las plantillas de contratos legales publicados por el amado Sericio Público de Empleo Estatal y que nos genera mucho trabajo recurrente y de poco valor
+
+***¿Qué valor aporta?*** El valor que aporta es la automatización de procesos para liberar al equipo de trabajo recurrente y de poco. Ahora el proceso de adaptación y comparación de estas plantillas es manual, además de ser un trabajo de poco valor, al ser manual es más susceptible de errores.
+
+***¿Para quién?*** Desarrollo interno para el equipo de arquitectura de producto.
+
+***Valor adicional*** Demostrar con un ejemplo tangible que se pueden contruir productos y herramientas en IA que nos ayuden a ser más productivos y por tanto competitivos. La idea de este proyecto no es nueva, pero sin IA llevaría meses de desarrollo, con IA espero poder tener las funcionalidades esenciales en 30-40 horas de trabajo
+
+**Para más información ver: [Mission](.agent-os/product/mission.md)**
 
 ### **1.2. Características y funcionalidades principales:**
 
-> Enumera y describe las características y funcionalidades específicas que tiene el producto para satisfacer las necesidades identificadas.
+* **Comparar** las diferencias en la estructura de documentos y formularios AcroForm (PDF).  
+* **Catalogar** plantillas y mantener un historial de comparaciones.  
+* **Actualizar** archivos de mapeo `JSON` para reflejar los cambios en las plantillas.  
+* **Automatizar** el *scraping* de la web del SEPE para detectar nuevas versiones.  
+* **Aprovechar al máximo la IA** para asistir en todo el proceso de desarrollo.
+
+**Para más información ver: [Roadmap](.agent-os/product/roadmap.md)**
+
+*El entregable de proyecto del Máster IA4Devs puede no contener todas las funcionales desarrollo 🥲*
 
 ### **1.3. Diseño y experiencia de usuario:**
+
 
 > Proporciona imágenes y/o videotutorial mostrando la experiencia del usuario desde que aterriza en la aplicación, pasando por todas las funcionalidades principales.
 
 ### **1.4. Instrucciones de instalación:**
+
 > Documenta de manera precisa las instrucciones para instalar y poner en marcha el proyecto en local (librerías, backend, frontend, servidor, base de datos, migraciones y semillas de datos, etc.)
 
 ---
@@ -54,6 +80,7 @@
 ## 2. Arquitectura del Sistema
 
 ### **2.1. Diagrama de arquitectura:**
+
 > Usa el formato que consideres más adecuado para representar los componentes principales de la aplicación y las tecnologías utilizadas. Explica si sigue algún patrón predefinido, justifica por qué se ha elegido esta arquitectura, y destaca los beneficios principales que aportan al proyecto y justifican su uso, así como sacrificios o déficits que implica.
 
 
