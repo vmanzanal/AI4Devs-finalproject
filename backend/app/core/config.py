@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Application configuration settings for SEPE Templates Comparator.
 
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
     ALLOWED_HOSTS: List[str] = ["*"]
     
     # Database settings
-    DATABASE_URL: str = "sqlite:///./sepe_comparator.db"
+    DATABASE_URL: str = "postgresql://sepe_user:sepe_password@localhost:5432/sepe_comparator"
     DATABASE_ECHO: bool = False
     
     # File upload settings
@@ -95,6 +96,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "ignore"
 
 
 # Create settings instance

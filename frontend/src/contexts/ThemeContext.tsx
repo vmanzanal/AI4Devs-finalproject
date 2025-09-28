@@ -1,5 +1,6 @@
-import React, { createContext, ReactNode, useEffect, useState } from 'react'
-import { ThemeContextType } from '../types'
+import type { ReactNode } from 'react'
+import React, { createContext, useEffect, useState } from 'react'
+import type { ThemeContextType } from '../types/index'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const ThemeContext = createContext<ThemeContextType | undefined>(undefined)

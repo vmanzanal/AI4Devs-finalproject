@@ -2,11 +2,19 @@
  * Base API service for HTTP communication with the backend
  */
 
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios'
-import { ApiResponse } from '../types'
+import axios from 'axios';
+
+// Type definitions
+interface ApiResponse<T = unknown> {
+  data?: T;
+  message?: string;
+  error?: string;
+  status?: number;
+  timestamp?: string;
+}
 
 class ApiService {
-  private api: AxiosInstance
+  private api: any
 
   constructor() {
     this.api = axios.create({
@@ -19,20 +27,20 @@ class ApiService {
 
     // Request interceptor to add auth token
     this.api.interceptors.request.use(
-      (config) => {
+      (config: any) => {
         const token = localStorage.getItem('access_token')
         if (token) {
           config.headers.Authorization = `Bearer ${token}`
         }
         return config
       },
-      (error) => Promise.reject(error)
+      (error: any) => Promise.reject(error)
     )
 
     // Response interceptor for error handling
     this.api.interceptors.response.use(
-      (response: AxiosResponse) => response,
-      (error: AxiosError) => {
+      (response: any) => response,
+      (error: any) => {
         if (error.response?.status === 401) {
           // Token expired or invalid
           localStorage.removeItem('access_token')
@@ -43,7 +51,7 @@ class ApiService {
     )
   }
 
-  private handleError(error: AxiosError): Error {
+  private handleError(error: any): Error {
     if (error.response?.data) {
       const errorData = error.response.data as ApiResponse
       return new Error(errorData.message || 'An error occurred')
@@ -57,34 +65,34 @@ class ApiService {
   }
 
   // Generic HTTP methods
-  async get<T = unknown>(url: string, params?: Record<string, unknown>): Promise<T> {
-    const response = await this.api.get<ApiResponse<T>>(url, { params })
+  async get<T = any>(url: string, params?: Record<string, unknown>): Promise<T> {
+    const response = await this.api.get(url, { params })
     return response.data.data || response.data
   }
 
-  async post<T = unknown>(url: string, data?: Record<string, unknown>): Promise<T> {
-    const response = await this.api.post<ApiResponse<T>>(url, data)
+  async post<T = any>(url: string, data?: Record<string, unknown>): Promise<T> {
+    const response = await this.api.post(url, data)
     return response.data.data || response.data
   }
 
-  async put<T = unknown>(url: string, data?: Record<string, unknown>): Promise<T> {
-    const response = await this.api.put<ApiResponse<T>>(url, data)
+  async put<T = any>(url: string, data?: Record<string, unknown>): Promise<T> {
+    const response = await this.api.put(url, data)
     return response.data.data || response.data
   }
 
-  async patch<T = unknown>(url: string, data?: Record<string, unknown>): Promise<T> {
-    const response = await this.api.patch<ApiResponse<T>>(url, data)
+  async patch<T = any>(url: string, data?: Record<string, unknown>): Promise<T> {
+    const response = await this.api.patch(url, data)
     return response.data.data || response.data
   }
 
-  async delete<T = unknown>(url: string): Promise<T> {
-    const response = await this.api.delete<ApiResponse<T>>(url)
+  async delete<T = any>(url: string): Promise<T> {
+    const response = await this.api.delete(url)
     return response.data.data || response.data
   }
 
   // File upload method
-  async upload<T = unknown>(url: string, formData: FormData): Promise<T> {
-    const response = await this.api.post<ApiResponse<T>>(url, formData, {
+  async upload<T = any>(url: string, formData: FormData): Promise<T> {
+    const response = await this.api.post(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

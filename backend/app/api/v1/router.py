@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from typing import Dict, Any
 
 from app.core.config import settings
+from app.core.database import check_database_connection
 
 
 # Create the main API router
@@ -22,12 +23,14 @@ async def health_check() -> Dict[str, Any]:
     Returns:
         Dict containing health status and system information
     """
+    db_status = "connected" if check_database_connection() else "not_connected"
+    
     return {
         "status": "healthy",
         "timestamp": settings.get_current_timestamp(),
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
-        "database": "not_connected"  # Will be updated when database is configured
+        "database": db_status
     }
 
 

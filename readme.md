@@ -47,9 +47,9 @@ https://github.com/vmanzanal/AI4Devs-finalproject
 
 **_Propósito:_** El objetivo es construir un comparador que nos permita gestionar de manera más eficiente los cambios anárquicos en las plantillas de contratos legales publicados por el amado Sericio Público de Empleo Estatal y que nos genera mucho trabajo recurrente y de poco valor
 
-**_¿Qué valor aporta?_** El valor que aporta es la automatización de procesos para liberar al equipo de trabajo recurrente y de poco. Ahora el proceso de adaptación y comparación de estas plantillas es manual, además de ser un trabajo de poco valor, al ser manual es más susceptible de errores.
+**_¿Qué valor aporta?_** El valor que aporta es la automatización de procesos para liberar al equipo de trabajo recurrente y de poco valor adicional. Ahora el proceso de adaptación y comparación de estas plantillas es manual, además de ser un trabajo de poco valor, al ser manual es más susceptible de errores.
 
-**_¿Para quién?_** Desarrollo interno para el equipo de arquitectura de producto.
+**_¿Para quién?_** Desarrollo interno para el equipo de arquitectura de producto puede ser util para otros actores internos de la empresa como el equipo de AMS del Cloud
 
 **_Valor adicional_** Demostrar con un ejemplo tangible que se pueden contruir productos y herramientas en IA que nos ayuden a ser más productivos y por tanto competitivos. La idea de este proyecto no es nueva, pero sin IA llevaría meses de desarrollo, con IA espero poder tener las funcionalidades esenciales en 30-40 horas de trabajo
 

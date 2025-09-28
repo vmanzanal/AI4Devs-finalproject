@@ -1,8 +1,8 @@
-"""Initial migration: create users, pdf_templates, template_versions, comparisons, and comparison_fields tables
+"""Create initial data models
 
-Revision ID: 5fb527bd70cb
+Revision ID: 99f831f97024
 Revises: 
-Create Date: 2025-09-17 09:38:28.236655
+Create Date: 2025-09-28 19:06:51.134832
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '5fb527bd70cb'
+revision: str = '99f831f97024'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -27,7 +27,7 @@ def upgrade() -> None:
     sa.Column('full_name', sa.String(length=255), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=True),
     sa.Column('is_superuser', sa.Boolean(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_users'))
     )
@@ -43,7 +43,7 @@ def upgrade() -> None:
     sa.Column('field_count', sa.Integer(), nullable=True),
     sa.Column('sepe_url', sa.String(length=1000), nullable=True),
     sa.Column('uploaded_by', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['uploaded_by'], ['users.id'], name=op.f('fk_pdf_templates_uploaded_by_users')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_pdf_templates'))
@@ -60,7 +60,7 @@ def upgrade() -> None:
     sa.Column('status', sa.String(length=50), nullable=True),
     sa.Column('differences_count', sa.Integer(), nullable=True),
     sa.Column('created_by', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     sa.ForeignKeyConstraint(['created_by'], ['users.id'], name=op.f('fk_comparisons_created_by_users')),
     sa.ForeignKeyConstraint(['source_template_id'], ['pdf_templates.id'], name=op.f('fk_comparisons_source_template_id_pdf_templates')),
@@ -78,7 +78,7 @@ def upgrade() -> None:
     sa.Column('version_number', sa.String(length=50), nullable=False),
     sa.Column('change_summary', sa.Text(), nullable=True),
     sa.Column('is_current', sa.Boolean(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['template_id'], ['pdf_templates.id'], name=op.f('fk_template_versions_template_id_pdf_templates')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_template_versions'))
     )
@@ -95,7 +95,7 @@ def upgrade() -> None:
     sa.Column('new_value', sa.Text(), nullable=True),
     sa.Column('position_x', sa.Float(), nullable=True),
     sa.Column('position_y', sa.Float(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.ForeignKeyConstraint(['comparison_id'], ['comparisons.id'], name=op.f('fk_comparison_fields_comparison_id_comparisons')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_comparison_fields'))
     )

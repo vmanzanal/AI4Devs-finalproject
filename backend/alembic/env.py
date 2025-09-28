@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
 from logging.config import fileConfig
@@ -28,8 +29,6 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set the database URL from environment variables
-config.set_main_option('sqlalchemy.url', settings.DATABASE_URL)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -65,24 +64,45 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Modificación en la función run_migrations_online()
+
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
+    # 1. Definir los parámetros de conexión directamente
+    # Usa un diccionario para pasar los componentes (¡asegúrate que la password sea ASCII limpia!)
+    connection_params = {
+        "host": "localhost",
+        "port": "5432",
+        "username": "sepe_user",
+        "password": "sepe_password", # REEMPLAZA por tu password limpia REAL
+        "database": "sepe_comparator"
+    }
 
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
+    # 2. Configurar el URL directamente en la configuración de Alembic
+    # Usaremos una sintaxis de URL que SQLAlchemy pueda entender 
+    url = "postgresql://{username}:{password}@{host}:{port}/{database}".format(**connection_params)
+    
+    # Establecer la URL limpia en el objeto config
+    config.set_main_option("sqlalchemy.url", url)
 
-    """
+    # 3. CREAR LA TRAZABILIDAD AQUÍ 💡
+    print("--- DEBUG: URL como cadena (repr) ---")
+    print(repr(url))
+    print("--- DEBUG: URL como bytes (UTF-8) ---")
+    print(url.encode('utf-8', errors='replace'))
+    print("--------------------------------------")
+
+    # 3. Crear el engine como antes
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-
+    
+    # 4. Intentar la conexión (líneas 84-91)
     with connectable.connect() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata
         )
-
         with context.begin_transaction():
             context.run_migrations()
 

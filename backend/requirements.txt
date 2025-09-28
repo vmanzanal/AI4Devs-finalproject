@@ -24,6 +24,7 @@ httpx==0.25.2
 
 # Configuration Management
 pydantic[email]==2.5.0
+pydantic-settings==2.1.0
 python-dotenv==1.0.0
 
 # Task Queue (for background processing)

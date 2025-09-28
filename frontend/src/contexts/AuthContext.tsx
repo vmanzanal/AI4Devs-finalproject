@@ -1,6 +1,6 @@
 import React, { createContext, ReactNode, useEffect, useState } from 'react'
 import { authService } from '../services/authService'
-import { AuthContextType, LoginRequest, RegisterRequest, User } from '../types'
+import type { AuthContextType, LoginRequest, RegisterRequest, User } from '../types/index'
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext<AuthContextType | undefined>(undefined)

@@ -2,7 +2,7 @@
  * Authentication service for user login, registration, and profile management
  */
 
-import { LoginRequest, LoginResponse, RegisterRequest, User } from '../types';
+import type { LoginRequest, LoginResponse, RegisterRequest, User } from '../types/index';
 import { apiService } from './apiService';
 
 class AuthService {
@@ -17,7 +17,7 @@ class AuthService {
    * Register a new user account
    */
   async register(userData: RegisterRequest): Promise<{ message: string; user: User }> {
-    return apiService.post('/auth/register', userData)
+    return apiService.post<{ message: string; user: User }>('/auth/register', userData)
   }
 
   /**
@@ -37,28 +37,36 @@ class AuthService {
   /**
    * Change user password
    */
-  async changePassword(oldPassword: string, newPassword: string): Promise<{ message: string }> {
-    return apiService.post('/auth/change-password', {
-      old_password: oldPassword,
-      new_password: newPassword,
-    })
+  async changePassword(data: { current_password: string; new_password: string }): Promise<{ message: string }> {
+    return apiService.put<{ message: string }>('/auth/change-password', data)
   }
 
   /**
    * Request password reset
    */
   async requestPasswordReset(email: string): Promise<{ message: string }> {
-    return apiService.post('/auth/password-reset', { email })
+    return apiService.post<{ message: string }>('/auth/password-reset', { email })
   }
 
   /**
    * Reset password with token
    */
-  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
-    return apiService.post('/auth/password-reset/confirm', {
-      token,
-      new_password: newPassword,
-    })
+  async resetPassword(data: { token: string; new_password: string }): Promise<{ message: string }> {
+    return apiService.post<{ message: string }>('/auth/password-reset/confirm', data)
+  }
+
+  /**
+   * Verify email with token
+   */
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    return apiService.post<{ message: string }>('/auth/verify-email', { token })
+  }
+
+  /**
+   * Resend email verification
+   */
+  async resendVerification(): Promise<{ message: string }> {
+    return apiService.post<{ message: string }>('/auth/resend-verification')
   }
 
   /**
