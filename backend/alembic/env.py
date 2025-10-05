@@ -12,13 +12,14 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import our models and configuration
-from app.core.config import settings
-from app.core.database import Base
+from app.core.config import settings  # noqa: E402
+from app.core.database import Base  # noqa: E402
 
 # Import all models to ensure they're registered with SQLAlchemy
-from app.models.user import User
-from app.models.template import PDFTemplate, TemplateVersion
-from app.models.comparison import Comparison, ComparisonField
+# These imports are necessary for Alembic to detect model changes
+from app.models.user import User  # noqa: F401, E402
+from app.models.template import PDFTemplate, TemplateVersion  # noqa: F401, E402
+from app.models.comparison import Comparison, ComparisonField  # noqa: F401, E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -52,7 +53,13 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    # Get database URL from settings or environment
+    url = settings.DATABASE_URL
+
+    # If URL is not available from settings, try to get it from alembic config
+    if not url:
+        url = config.get_main_option("sqlalchemy.url")
+
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -64,45 +71,35 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-# Modificación en la función run_migrations_online()
-
 def run_migrations_online() -> None:
-    # 1. Definir los parámetros de conexión directamente
-    # Usa un diccionario para pasar los componentes (¡asegúrate que la password sea ASCII limpia!)
-    connection_params = {
-        "host": "localhost",
-        "port": "5432",
-        "username": "sepe_user",
-        "password": "sepe_password", # REEMPLAZA por tu password limpia REAL
-        "database": "sepe_comparator"
-    }
+    """Run migrations in 'online' mode.
 
-    # 2. Configurar el URL directamente en la configuración de Alembic
-    # Usaremos una sintaxis de URL que SQLAlchemy pueda entender 
-    url = "postgresql://{username}:{password}@{host}:{port}/{database}".format(**connection_params)
-    
-    # Establecer la URL limpia en el objeto config
+    In this scenario we need to create an Engine
+    and associate a connection with the context.
+
+    """
+    # Get database URL from settings or environment
+    # This respects the same configuration as the main application
+    url = settings.DATABASE_URL
+
+    # If URL is not available from settings, try to get it from alembic config
+    if not url:
+        url = config.get_main_option("sqlalchemy.url")
+
+    # Set the URL in the alembic configuration
     config.set_main_option("sqlalchemy.url", url)
 
-    # 3. CREAR LA TRAZABILIDAD AQUÍ 💡
-    print("--- DEBUG: URL como cadena (repr) ---")
-    print(repr(url))
-    print("--- DEBUG: URL como bytes (UTF-8) ---")
-    print(url.encode('utf-8', errors='replace'))
-    print("--------------------------------------")
-
-    # 3. Crear el engine como antes
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    
-    # 4. Intentar la conexión (líneas 84-91)
+
     with connectable.connect() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata
         )
+
         with context.begin_transaction():
             context.run_migrations()
 
