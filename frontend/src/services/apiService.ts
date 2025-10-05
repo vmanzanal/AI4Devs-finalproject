@@ -101,7 +101,13 @@ class ApiService {
   }
 
   // Health check
-  async healthCheck(): Promise<{ status: string; timestamp: string }> {
+  async healthCheck(): Promise<{ 
+    status: string; 
+    timestamp: string; 
+    version?: string;
+    environment?: string;
+    database?: string;
+  }> {
     return this.get('/health')
   }
 }

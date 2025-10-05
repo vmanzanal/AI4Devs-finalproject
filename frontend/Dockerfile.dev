@@ -4,8 +4,8 @@ FROM node:20-alpine
 # Set working directory
 WORKDIR /app
 
-# Install dependencies for development
-RUN apk add --no-cache git
+# Install dependencies for development including wget for health checks
+RUN apk add --no-cache git wget
 
 # Copy package files
 COPY package*.json ./
