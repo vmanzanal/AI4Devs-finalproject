@@ -4,6 +4,7 @@ Template management endpoints for SEPE Templates Comparator API.
 
 import os
 import shutil
+import time
 from typing import Any, List, Optional
 from fastapi import (
     APIRouter, 
@@ -17,6 +18,8 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, asc
+from pathlib import Path
+from datetime import datetime
 
 from app.core.auth import get_current_active_user, get_optional_current_user
 from app.core.config import settings
@@ -29,6 +32,19 @@ from app.schemas.template import (
     TemplateUploadResponse,
     TemplateUpdate,
     TemplateVersionResponse,
+)
+from app.schemas.pdf_analysis import (
+    TemplateField,
+    AnalysisResponse,
+    ErrorResponse,
+    create_analysis_response,
+    create_error_response
+)
+from app.services.pdf_analysis_service import (
+    PDFAnalysisService,
+    PDFProcessingError,
+    InvalidPDFError,
+    NoFormFieldsError
 )
 
 router = APIRouter()
@@ -404,3 +420,279 @@ def get_template_versions(
         )
         for version in versions
     ]
+
+
+@router.post("/analyze", 
+    response_model=AnalysisResponse,
+    summary="Analyze PDF Template Fields",
+    description="""
+    Analyze an uploaded PDF template and extract its AcroForm field structure.
+    
+    This endpoint processes PDF files containing form fields (such as SEPE templates) 
+    and returns a structured analysis of all form fields found in the document.
+    
+    **Features:**
+    - Extracts all AcroForm fields with their unique identifiers
+    - Determines field types (text, radiobutton, checkbox, listbox)
+    - Finds meaningful Spanish descriptive text near each field
+    - Preserves document field ordering (top-to-bottom, left-to-right)
+    - Handles encrypted PDFs and various PDF formats
+    - Returns processing metadata including timing information
+    
+    **Supported Field Types:**
+    - `text`: Text input fields
+    - `radiobutton`: Radio button selections
+    - `checkbox`: Checkbox inputs  
+    - `listbox`: Dropdown/selection lists
+    
+    **File Requirements:**
+    - Format: PDF files only (.pdf extension)
+    - Size: Maximum 10MB
+    - Content: Must contain AcroForm fields
+    - Encoding: Supports encrypted PDFs
+    
+    **Response Format:**
+    The response includes:
+    - `status`: Success/error indicator
+    - `data`: Array of field objects with ID, type, nearby text, and options
+    - `metadata`: Processing information (field count, timing, page count)
+    
+    **Example Response:**
+    ```json
+    {
+      "status": "success",
+      "data": [
+        {
+          "field_id": "A0101",
+          "type": "text", 
+          "near_text": "hasta un máximo de",
+          "value_options": null
+        }
+      ],
+      "metadata": {
+        "total_fields": 12,
+        "processing_time_ms": 850,
+        "document_pages": 1
+      }
+    }
+    ```
+    """,
+    response_description="Structured analysis of PDF form fields with metadata",
+    responses={
+        200: {
+            "description": "PDF analysis completed successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "data": [
+                            {
+                                "field_id": "A0101",
+                                "type": "text",
+                                "near_text": "hasta un máximo de",
+                                "value_options": None
+                            },
+                            {
+                                "field_id": "A0102", 
+                                "type": "text",
+                                "near_text": "que suponen",
+                                "value_options": None
+                            }
+                        ],
+                        "metadata": {
+                            "total_fields": 12,
+                            "processing_time_ms": 850,
+                            "document_pages": 1
+                        }
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Invalid file format or empty file",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "File must be a PDF (.pdf extension required)"
+                    }
+                }
+            }
+        },
+        413: {
+            "description": "File too large",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "File size exceeds 10MB limit"
+                    }
+                }
+            }
+        },
+        422: {
+            "description": "Missing or invalid file parameter",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["body", "file"],
+                                "msg": "field required",
+                                "type": "value_error.missing"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        500: {
+            "description": "PDF processing error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "PDF processing failed: Unable to extract form fields"
+                    }
+                }
+            }
+        }
+    },
+    tags=["PDF Analysis"],
+    operation_id="analyze_pdf_template"
+)
+async def analyze_pdf_template(
+    file: UploadFile = File(..., description="PDF file to analyze")
+) -> Any:
+    """
+    Analyze uploaded PDF template and extract AcroForm field structure.
+    
+    This endpoint accepts a PDF file upload and returns a structured analysis
+    of all form fields found in the document, including field IDs, types,
+    nearby text, and available options for selection fields.
+    
+    Args:
+        file: PDF file to analyze (max 10MB)
+        
+    Returns:
+        AnalysisResponse: Structured analysis results with field data and metadata
+        
+    Raises:
+        HTTPException: Various HTTP errors for validation and processing failures
+    """
+    # Start timing for processing metadata
+    start_time = time.time()
+    
+    try:
+        # Validate file is provided
+        if not file.filename:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="No file provided in the request"
+            )
+        
+        # Validate file extension
+        if not file.filename.lower().endswith('.pdf'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only PDF files are allowed. Please upload a valid PDF document."
+            )
+        
+        # Read file content for size validation
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        # Validate file size (10MB limit as specified)
+        max_size_bytes = 10 * 1024 * 1024  # 10MB
+        if file_size > max_size_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File exceeds maximum size limit of 10MB. File size: {file_size / (1024*1024):.1f}MB"
+            )
+        
+        # Validate file is not empty
+        if file_size == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file is empty. Please provide a valid PDF document."
+            )
+        
+        # Create temporary file for processing
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = Path(temp_file.name)
+        
+        try:
+            # Initialize PDF analysis service
+            pdf_service = PDFAnalysisService()
+            
+            # Analyze the PDF
+            analysis_results = pdf_service.analyze_pdf(temp_file_path)
+            
+            # Get the actual number of pages from the PDF
+            document_pages = pdf_service.get_page_count(temp_file_path)
+            
+            # Convert service results to Pydantic models
+            template_fields = []
+            for field_data in analysis_results:
+                template_field = TemplateField(
+                    field_id=field_data.field_id,
+                    type=field_data.type,
+                    near_text=field_data.near_text,
+                    value_options=field_data.value_options
+                )
+                template_fields.append(template_field)
+            
+            # Calculate processing time
+            processing_time_ms = int((time.time() - start_time) * 1000)
+            
+            # Create response using utility function
+            response = create_analysis_response(
+                fields=template_fields,
+                processing_time_ms=processing_time_ms,
+                document_pages=document_pages
+            )
+            
+            return response
+            
+        finally:
+            # Clean up temporary file
+            if temp_file_path.exists():
+                temp_file_path.unlink()
+    
+    except HTTPException:
+        # Re-raise HTTPExceptions to let FastAPI handle them properly
+        raise
+    
+    except InvalidPDFError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid or corrupted PDF file: {str(e)}"
+        )
+    
+    except NoFormFieldsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No AcroForm fields found in the PDF document: {str(e)}"
+        )
+    
+    except PDFProcessingError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process PDF: {str(e)}"
+        )
+    
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Temporary file processing error. Please try again."
+        )
+    
+    except Exception as e:
+        # Log the unexpected error for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Unexpected error in PDF analysis endpoint: {str(e)}", exc_info=True)
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while processing the PDF. Please try again."
+        )

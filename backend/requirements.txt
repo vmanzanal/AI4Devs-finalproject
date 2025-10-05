@@ -17,6 +17,7 @@ python-multipart==0.0.6
 # PDF Processing
 PyPDF2==3.0.1
 pdfplumber==0.10.3
+pycryptodome==3.23.0
 
 # HTTP Client & Web Scraping
 requests==2.31.0
