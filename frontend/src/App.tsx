@@ -11,6 +11,7 @@ import ComparisonsPage from './pages/comparisons/ComparisonsPage'
 import CreateComparisonPage from './pages/comparisons/CreateComparisonPage'
 import HomePage from './pages/HomePage'
 import NotFoundPage from './pages/NotFoundPage'
+import TemplateAnalyzePage from './pages/TemplateAnalyzePage'
 import TemplateDetailsPage from './pages/templates/TemplateDetailsPage'
 import TemplatesPage from './pages/templates/TemplatesPage'
 import TemplateUploadPage from './pages/templates/TemplateUploadPage'
@@ -28,6 +29,9 @@ function App() {
               {/* Public routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              
+              {/* Template Analysis - Public Route */}
+              <Route path="/analyze" element={<TemplateAnalyzePage />} />
               
               {/* Protected routes with layout */}
               <Route path="/" element={

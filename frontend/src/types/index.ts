@@ -210,3 +210,7 @@ export type XOR<T, U> = (T | U) extends object ? (Without<T, U> & U) | (Without<
 export type Optional<T, K extends keyof T> = Pick<Partial<T>, K> & Omit<T, K>;
 export type RequiredKeys<T> = { [K in keyof T]-?: Record<string, never> extends Pick<T, K> ? never : K }[keyof T];
 export type OptionalKeys<T> = { [K in keyof T]-?: Record<string, never> extends Pick<T, K> ? K : never }[keyof T];
+
+// PDF Analysis Types
+export * from './pdfAnalysis';
+

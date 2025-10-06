@@ -1,0 +1,363 @@
+/**
+ * TemplateAnalyzePage - Main page component for PDF template analysis
+ */
+
+import { ArrowLeft, Download, RefreshCw } from "lucide-react";
+import React, { useCallback } from "react";
+import FileUploadZone from "../../components/FileUploadZone/FileUploadZone";
+import TemplateFieldTable from "../../components/TemplateFieldTable/TemplateFieldTable";
+import { useAnalyzePageState, useResponsiveBreakpoints } from "../../hooks/usePDFAnalysis";
+import type { TemplateAnalyzePageProps } from "../../types/pdfAnalysis";
+
+/**
+ * Progress bar component for upload progress
+ */
+interface ProgressBarProps {
+  progress: number;
+  className?: string;
+}
+
+const ProgressBar: React.FC<ProgressBarProps> = ({ progress, className = "" }) => {
+  return (
+    <div className={`w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700 ${className}`}>
+      <div
+        className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+        style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }}
+        role="progressbar"
+        aria-valuenow={progress}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Upload progress: ${progress}%`}
+      />
+    </div>
+  );
+};
+
+/**
+ * Status indicator component for different upload states
+ */
+interface StatusIndicatorProps {
+  uploadState: string;
+  error: string | null;
+  progress: number;
+}
+
+const StatusIndicator: React.FC<StatusIndicatorProps> = ({ uploadState, error, progress }) => {
+  const getStatusContent = () => {
+    switch (uploadState) {
+      case "uploading":
+        return (
+          <div className="flex flex-col items-center space-y-2">
+            <div className="flex items-center space-x-2 text-blue-600 dark:text-blue-400">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+              <span>Uploading PDF...</span>
+            </div>
+            <ProgressBar progress={progress} className="w-64" />
+            <span className="text-sm text-gray-600 dark:text-gray-400">{progress}%</span>
+          </div>
+        );
+      
+      case "processing":
+        return (
+          <div className="flex items-center space-x-2 text-blue-600 dark:text-blue-400">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+            <span>Analyzing PDF structure...</span>
+          </div>
+        );
+      
+      case "success":
+        return (
+          <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
+            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span>Analysis Complete!</span>
+          </div>
+        );
+      
+      case "error":
+        return (
+          <div className="text-red-600 dark:text-red-400">
+            <div className="flex items-center space-x-2 mb-2">
+              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span>Analysis Failed</span>
+            </div>
+            {error && (
+              <p className="text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 p-3 rounded-md">
+                {error}
+              </p>
+            )}
+          </div>
+        );
+      
+      default:
+        return null;
+    }
+  };
+
+  const content = getStatusContent();
+  if (!content) return null;
+
+  return (
+    <div
+      className="flex justify-center py-4"
+      role="status"
+      aria-live="polite"
+      aria-label="Upload status"
+    >
+      {content}
+    </div>
+  );
+};
+
+/**
+ * Action buttons component for different states
+ */
+interface ActionButtonsProps {
+  uploadState: string;
+  onAnalyzeAnother: () => void;
+  onExportResults: () => void;
+  onRetry: () => void;
+  onChooseDifferentFile: () => void;
+  hasResults: boolean;
+}
+
+const ActionButtons: React.FC<ActionButtonsProps> = ({
+  uploadState,
+  onAnalyzeAnother,
+  onExportResults,
+  onRetry,
+  onChooseDifferentFile,
+  hasResults,
+}) => {
+  if (uploadState === "success" && hasResults) {
+    return (
+      <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
+        <button
+          onClick={onAnalyzeAnother}
+          className="flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Analyze Another File</span>
+        </button>
+        <button
+          onClick={onExportResults}
+          className="flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+        >
+          <Download className="h-4 w-4" />
+          <span>Export Results</span>
+        </button>
+      </div>
+    );
+  }
+
+  if (uploadState === "error") {
+    return (
+      <div className="flex flex-col sm:flex-row gap-4 justify-center mt-4">
+        <button
+          onClick={onRetry}
+          className="flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+        >
+          <RefreshCw className="h-4 w-4" />
+          <span>Try Again</span>
+        </button>
+        <button
+          onClick={onChooseDifferentFile}
+          className="flex items-center justify-center space-x-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Choose Different File</span>
+        </button>
+      </div>
+    );
+  }
+
+  return null;
+};
+
+/**
+ * Main TemplateAnalyzePage component
+ */
+const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "" }) => {
+  const { state, handleFileSelect, handleAnalyze, handleReset } = useAnalyzePageState();
+  const breakpoints = useResponsiveBreakpoints();
+
+  const {
+    uploadState,
+    selectedFile,
+    analysisResults,
+    metadata,
+    error,
+    progress,
+  } = state;
+
+  // Determine responsive padding
+  const containerPadding = breakpoints.mobile ? "px-4" : breakpoints.tablet ? "px-6" : "px-8";
+  const maxWidth = breakpoints.mobile ? "max-w-full" : "max-w-6xl";
+
+  // Export results to JSON
+  const handleExportResults = useCallback(() => {
+    if (!analysisResults || !metadata) return;
+
+    const exportData = {
+      fileName: selectedFile?.name || "unknown.pdf",
+      analysisDate: new Date().toISOString(),
+      metadata,
+      fields: analysisResults,
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: "application/json",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${selectedFile?.name?.replace('.pdf', '') || 'template'}-analysis.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [analysisResults, metadata, selectedFile]);
+
+  // Handle retry action
+  const handleRetry = useCallback(() => {
+    if (selectedFile) {
+      handleAnalyze();
+    }
+  }, [selectedFile, handleAnalyze]);
+
+  // Handle choose different file action
+  const handleChooseDifferentFile = useCallback(() => {
+    handleReset();
+  }, [handleReset]);
+
+  const showResults = uploadState === "success" && analysisResults && analysisResults.length > 0;
+  const isProcessing = uploadState === "uploading" || uploadState === "processing";
+
+  return (
+    <div
+      className={`template-analyze-page min-h-screen bg-gray-50 dark:bg-gray-900 ${containerPadding} py-8 ${className}`}
+      data-testid="template-analyze-page"
+    >
+      <div className={`mx-auto ${maxWidth}`}>
+        <main role="main" aria-label="PDF Template Analysis">
+          {/* Page Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+              PDF Template Analyzer
+            </h1>
+            <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+              Upload a PDF form to analyze its structure and extract form field information.
+              Get detailed insights about field types, locations, and available options.
+            </p>
+          </div>
+
+          {/* Upload Section */}
+          <div className="mb-8">
+            <FileUploadZone
+              onFileSelect={handleFileSelect}
+              onAnalyze={handleAnalyze}
+              uploadState={uploadState}
+              selectedFile={selectedFile}
+              error={error}
+              progress={progress}
+              disabled={isProcessing}
+              data-testid="file-upload-zone"
+            />
+          </div>
+
+          {/* Status Indicator */}
+          <StatusIndicator
+            uploadState={uploadState}
+            error={error}
+            progress={progress}
+          />
+
+          {/* Action Buttons */}
+          <ActionButtons
+            uploadState={uploadState}
+            onAnalyzeAnother={handleReset}
+            onExportResults={handleExportResults}
+            onRetry={handleRetry}
+            onChooseDifferentFile={handleChooseDifferentFile}
+            hasResults={!!analysisResults && analysisResults.length > 0}
+          />
+
+          {/* Results Section */}
+          {showResults && (
+            <div className="mt-12">
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                    Analysis Results
+                  </h2>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    File: <span className="font-medium">{selectedFile?.name}</span>
+                  </div>
+                </div>
+                <div className="h-px bg-gradient-to-r from-blue-500 to-purple-500 mb-6" />
+              </div>
+
+              <TemplateFieldTable
+                fields={analysisResults}
+                metadata={metadata!}
+                loading={false}
+                data-testid="template-field-table"
+              />
+            </div>
+          )}
+
+          {/* Empty Results Message */}
+          {uploadState === "success" && (!analysisResults || analysisResults.length === 0) && (
+            <div className="mt-12 text-center">
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-6">
+                <svg className="mx-auto h-12 w-12 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <h3 className="mt-4 text-lg font-medium text-yellow-800 dark:text-yellow-200">
+                  No Form Fields Found
+                </h3>
+                <p className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+                  The uploaded PDF doesn't contain any analyzable form fields. 
+                  Please try uploading a PDF form with interactive elements.
+                </p>
+                <button
+                  onClick={handleReset}
+                  className="mt-4 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-colors"
+                >
+                  Try Another File
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Error Alert */}
+          {uploadState === "error" && error && (
+            <div className="mt-8" role="alert">
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <div className="flex items-start">
+                  <svg className="h-5 w-5 text-red-400 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <div>
+                    <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
+                      Analysis Error
+                    </h3>
+                    <p className="mt-1 text-sm text-red-700 dark:text-red-300">
+                      {error}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default TemplateAnalyzePage;
