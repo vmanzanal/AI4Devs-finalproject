@@ -1,5 +1,30 @@
 """
 Authentication endpoints for SEPE Templates Comparator API.
+
+This module provides HTTP endpoints for user authentication and account
+management. All endpoints follow RESTful conventions and return appropriate
+HTTP status codes.
+
+Endpoints:
+    POST /register - Create a new user account
+    POST /login - Authenticate user and receive JWT token
+    POST /login/oauth - OAuth2-compatible login endpoint
+    GET /me - Get current authenticated user information
+    POST /change-password - Change password for authenticated user
+    POST /password-reset - Request password reset token
+    POST /password-reset/confirm - Confirm password reset with token
+
+Architecture:
+    - Uses service layer (user_service) for business logic
+    - Endpoints handle only HTTP concerns (validation, status codes)
+    - Follows SOLID principles (Single Responsibility)
+    - No direct database queries in endpoint handlers
+
+Security:
+    - JWT-based authentication
+    - Bcrypt password hashing
+    - Protected endpoints require valid JWT token
+    - Time-limited password reset tokens
 """
 
 from datetime import timedelta
@@ -8,14 +33,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_active_user, get_current_user
+from app.core.auth import get_current_active_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import (
     create_access_token,
     get_password_hash,
-    verify_password,
     generate_password_reset_token,
+    verify_password,
     verify_password_reset_token,
 )
 from app.models.user import User
@@ -28,50 +53,76 @@ from app.schemas.auth import (
     PasswordResetConfirm,
     PasswordChange,
 )
+from app.services import user_service
 
 router = APIRouter()
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED
+)
 def register(
     user_data: UserRegister,
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Register a new user.
-    
+    Register a new user account.
+
+    Creates a new user with the provided email, password, and full name.
+    The password is automatically hashed before storage. Returns the created
+    user information (without password).
+
     Args:
-        user_data: User registration data
-        db: Database session
-        
+        user_data: User registration data validated by Pydantic schema:
+            - email: Valid email address (unique)
+            - password: Password (min 8 characters)
+            - full_name: User's full name
+        db: Database session dependency injected by FastAPI.
+
     Returns:
-        UserResponse: Created user data
-        
+        UserResponse: Created user data including:
+            - id: Unique user identifier
+            - email: User's email
+            - full_name: User's full name
+            - is_active: Account status (always True for new users)
+            - is_superuser: Superuser status (always False for new users)
+            - created_at: Account creation timestamp
+
     Raises:
-        HTTPException: If email already exists
+        HTTPException: 400 Bad Request if email is already registered.
+        HTTPException: 422 Unprocessable Entity if validation fails.
+
+    Example Request:
+        POST /api/v1/auth/register
+        {
+            "email": "user@example.com",
+            "password": "securepass123",
+            "full_name": "John Doe"
+        }
+
+    Example Response (201 Created):
+        {
+            "id": 1,
+            "email": "user@example.com",
+            "full_name": "John Doe",
+            "is_active": true,
+            "is_superuser": false,
+            "created_at": "2024-01-01T12:00:00Z"
+        }
     """
     # Check if user already exists
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
+    existing_user = user_service.get_user_by_email(db, user_data.email)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
-    # Create new user
-    hashed_password = get_password_hash(user_data.password)
-    db_user = User(
-        email=user_data.email,
-        hashed_password=hashed_password,
-        full_name=user_data.full_name,
-        is_active=True,
-        is_superuser=False
-    )
-    
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    
+
+    # Create new user using service layer
+    db_user = user_service.create_user(db, user_data)
+
     return UserResponse(
         id=db_user.id,
         email=db_user.email,
@@ -88,42 +139,84 @@ def login(
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    User login with email and password.
-    
+    Authenticate user and generate JWT access token.
+
+    Validates the user's email and password, then generates a JWT token
+    that can be used to access protected endpoints. The token must be
+    included in the Authorization header for subsequent requests.
+
     Args:
-        user_credentials: User login credentials
-        db: Database session
-        
+        user_credentials: Login credentials validated by Pydantic schema:
+            - email: User's email address
+            - password: User's password (plain text, will be verified)
+        db: Database session dependency injected by FastAPI.
+
     Returns:
-        Token: JWT access token and user data
-        
+        Token: Authentication response including:
+            - access_token: JWT token string
+            - token_type: Always "bearer"
+            - expires_in: Token lifetime in seconds
+            - user: User information (UserResponse schema)
+
     Raises:
-        HTTPException: If credentials are invalid
+        HTTPException: 401 Unauthorized if credentials are incorrect.
+        HTTPException: 400 Bad Request if user account is inactive.
+
+    Example Request:
+        POST /api/v1/auth/login
+        {
+            "email": "user@example.com",
+            "password": "securepass123"
+        }
+
+    Example Response (200 OK):
+        {
+            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+            "token_type": "bearer",
+            "expires_in": 86400,
+            "user": {
+                "id": 1,
+                "email": "user@example.com",
+                "full_name": "John Doe",
+                "is_active": true,
+                "is_superuser": false,
+                "created_at": "2024-01-01T12:00:00Z"
+            }
+        }
+
+    Usage:
+        After receiving the token, include it in subsequent requests:
+        Authorization: Bearer <access_token>
     """
-    user = db.query(User).filter(User.email == user_credentials.email).first()
-    
-    if not user or not verify_password(user_credentials.password, user.hashed_password):
+    # Authenticate user using service layer
+    user = user_service.authenticate_user(
+        db,
+        user_credentials.email,
+        user_credentials.password
+    )
+
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
         )
-    
+
     access_token_expires = timedelta(hours=settings.JWT_EXPIRATION_HOURS)
     access_token = create_access_token(
         subject=user.id, expires_delta=access_token_expires
     )
-    
+
     return Token(
         access_token=access_token,
         token_type="bearer",
-        expires_in=settings.JWT_EXPIRATION_HOURS * 3600,  # Convert to seconds
+        expires_in=settings.JWT_EXPIRATION_HOURS * 3600,
         user=UserResponse(
             id=user.id,
             email=user.email,
@@ -142,15 +235,17 @@ def login_oauth(
 ) -> Any:
     """
     OAuth2 compatible login endpoint.
-    
+
     Args:
         form_data: OAuth2 form data
         db: Database session
-        
+
     Returns:
         Token: JWT access token and user data
     """
-    user_credentials = UserLogin(email=form_data.username, password=form_data.password)
+    user_credentials = UserLogin(
+        email=form_data.username, password=form_data.password
+    )
     return login(user_credentials, db)
 
 
@@ -160,10 +255,10 @@ def get_current_user_info(
 ) -> Any:
     """
     Get current user information.
-    
+
     Args:
         current_user: Current authenticated user
-        
+
     Returns:
         UserResponse: Current user data
     """
@@ -185,27 +280,31 @@ def change_password(
 ) -> Any:
     """
     Change user password.
-    
+
     Args:
         password_data: Password change data
         current_user: Current authenticated user
         db: Database session
-        
+
     Returns:
         dict: Success message
-        
+
     Raises:
         HTTPException: If old password is incorrect
     """
-    if not verify_password(password_data.old_password, current_user.hashed_password):
+    if not verify_password(
+        password_data.old_password,
+        str(current_user.hashed_password)
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect password"
         )
-    
-    current_user.hashed_password = get_password_hash(password_data.new_password)
+
+    new_hash = get_password_hash(password_data.new_password)
+    current_user.hashed_password = new_hash  # type: ignore
     db.commit()
-    
+
     return {"message": "Password updated successfully"}
 
 
@@ -216,24 +315,26 @@ def request_password_reset(
 ) -> Any:
     """
     Request password reset.
-    
+
     Args:
         reset_data: Password reset request data
         db: Database session
-        
+
     Returns:
         dict: Success message
     """
-    user = db.query(User).filter(User.email == reset_data.email).first()
-    
+    # Use service layer to get user by email
+    user = user_service.get_user_by_email(db, reset_data.email)
+
     if user:
         # Generate password reset token
-        reset_token = generate_password_reset_token(user.email)
+        _ = generate_password_reset_token(str(user.email))
         # TODO: Send email with reset token
         # For now, we'll just return success
-    
+
     # Always return success to prevent email enumeration
-    return {"message": "If the email exists, a password reset link has been sent"}
+    msg = "If the email exists, a password reset link has been sent"
+    return {"message": msg}
 
 
 @router.post("/password-reset/confirm")
@@ -243,14 +344,14 @@ def confirm_password_reset(
 ) -> Any:
     """
     Confirm password reset with token.
-    
+
     Args:
         reset_data: Password reset confirmation data
         db: Database session
-        
+
     Returns:
         dict: Success message
-        
+
     Raises:
         HTTPException: If token is invalid
     """
@@ -260,15 +361,17 @@ def confirm_password_reset(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token"
         )
-    
-    user = db.query(User).filter(User.email == email).first()
+
+    # Use service layer to get user by email
+    user = user_service.get_user_by_email(db, email)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
-    user.hashed_password = get_password_hash(reset_data.new_password)
+
+    new_hash = get_password_hash(reset_data.new_password)
+    user.hashed_password = new_hash  # type: ignore
     db.commit()
-    
+
     return {"message": "Password reset successfully"}

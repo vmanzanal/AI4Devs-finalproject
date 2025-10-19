@@ -13,7 +13,7 @@ from app.models.user import User
 class TestAuthEndpoints:
     """Test cases for authentication endpoints."""
     
-    def test_register_new_user(self, client: TestClient, test_db: Session):
+    def test_register_new_user(self, client: TestClient, db_session: Session):
         """Test user registration with valid data."""
         user_data = {
             "email": "test@example.com",
@@ -33,11 +33,15 @@ class TestAuthEndpoints:
         assert "created_at" in data
         
         # Verify user was created in database
-        db_user = test_db.query(User).filter(User.email == user_data["email"]).first()
+        db_user = db_session.query(User).filter(
+            User.email == user_data["email"]
+        ).first()
         assert db_user is not None
         assert db_user.email == user_data["email"]
     
-    def test_register_duplicate_email(self, client: TestClient, test_db: Session):
+    def test_register_duplicate_email(
+        self, client: TestClient, db_session: Session
+    ):
         """Test registration with existing email."""
         # Create existing user
         existing_user = User(
@@ -46,8 +50,8 @@ class TestAuthEndpoints:
             full_name="Existing User",
             is_active=True
         )
-        test_db.add(existing_user)
-        test_db.commit()
+        db_session.add(existing_user)
+        db_session.commit()
         
         # Try to register with same email
         user_data = {
@@ -82,7 +86,9 @@ class TestAuthEndpoints:
         response = client.post("/api/v1/auth/register", json=user_data)
         assert response.status_code == 422  # Validation error
     
-    def test_login_valid_credentials(self, client: TestClient, db: Session):
+    def test_login_valid_credentials(
+        self, client: TestClient, db_session: Session
+    ):
         """Test login with valid credentials."""
         # Create test user
         password = "testpassword123"
@@ -92,9 +98,9 @@ class TestAuthEndpoints:
             full_name="Login User",
             is_active=True
         )
-        test_db.add(user)
-        test_db.commit()
-        test_db.refresh(user)
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
         
         # Login
         login_data = {
@@ -123,7 +129,7 @@ class TestAuthEndpoints:
         assert response.status_code == 401
         assert "Incorrect email or password" in response.json()["message"]
     
-    def test_login_invalid_password(self, client: TestClient, db: Session):
+    def test_login_invalid_password(self, client: TestClient, db_session: Session):
         """Test login with incorrect password."""
         # Create test user
         user = User(
@@ -132,8 +138,8 @@ class TestAuthEndpoints:
             full_name="Test User",
             is_active=True
         )
-        test_db.add(user)
-        test_db.commit()
+        db_session.add(user)
+        db_session.commit()
         
         # Try login with wrong password
         login_data = {
@@ -145,7 +151,7 @@ class TestAuthEndpoints:
         assert response.status_code == 401
         assert "Incorrect email or password" in response.json()["message"]
     
-    def test_login_inactive_user(self, client: TestClient, db: Session):
+    def test_login_inactive_user(self, client: TestClient, db_session: Session):
         """Test login with inactive user."""
         # Create inactive user
         password = "testpassword123"
@@ -155,8 +161,8 @@ class TestAuthEndpoints:
             full_name="Inactive User",
             is_active=False  # Inactive user
         )
-        test_db.add(user)
-        test_db.commit()
+        db_session.add(user)
+        db_session.commit()
         
         # Try login
         login_data = {
@@ -168,7 +174,7 @@ class TestAuthEndpoints:
         assert response.status_code == 400
         assert "Inactive user" in response.json()["detail"]
     
-    def test_get_current_user_valid_token(self, client: TestClient, db: Session):
+    def test_get_current_user_valid_token(self, client: TestClient, db_session: Session):
         """Test getting current user with valid token."""
         # Create test user
         password = "testpassword123"
@@ -178,9 +184,9 @@ class TestAuthEndpoints:
             full_name="Current User",
             is_active=True
         )
-        test_db.add(user)
-        test_db.commit()
-        test_db.refresh(user)
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
         
         # Login to get token
         login_data = {
@@ -214,7 +220,7 @@ class TestAuthEndpoints:
         
         assert response.status_code == 403  # Forbidden, no authorization header
     
-    def test_change_password_valid(self, client: TestClient, db: Session):
+    def test_change_password_valid(self, client: TestClient, db_session: Session):
         """Test changing password with valid old password."""
         # Create test user
         old_password = "oldpassword123"
@@ -224,8 +230,8 @@ class TestAuthEndpoints:
             full_name="Change Pass User",
             is_active=True
         )
-        test_db.add(user)
-        test_db.commit()
+        db_session.add(user)
+        db_session.commit()
         
         # Login to get token
         login_data = {
@@ -260,7 +266,7 @@ class TestAuthEndpoints:
         })
         assert new_login_response.status_code == 200
     
-    def test_change_password_invalid_old(self, client: TestClient, db: Session):
+    def test_change_password_invalid_old(self, client: TestClient, db_session: Session):
         """Test changing password with incorrect old password."""
         # Create test user
         password = "correctpassword123"
@@ -270,8 +276,8 @@ class TestAuthEndpoints:
             full_name="Test User",
             is_active=True
         )
-        test_db.add(user)
-        test_db.commit()
+        db_session.add(user)
+        db_session.commit()
         
         # Login to get token
         login_data = {
