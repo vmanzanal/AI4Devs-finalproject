@@ -29,7 +29,17 @@ class Settings(BaseSettings):
     
     # Security settings
     SECRET_KEY: str = "your-secret-key-change-in-production"
-    ALLOWED_HOSTS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "http://frontend:3000", "localhost", "127.0.0.1", "frontend", "0.0.0.0"]
+    ALLOWED_HOSTS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",  # Vite dev server
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",  # Vite dev server
+        "http://frontend:3000",
+        "localhost",
+        "127.0.0.1",
+        "frontend",
+        "0.0.0.0"
+    ]
     
     # Database settings
     DATABASE_URL: str = "postgresql://sepe_user:sepe_password@localhost:5432/sepe_comparator"

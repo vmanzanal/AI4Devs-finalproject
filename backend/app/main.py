@@ -64,9 +64,12 @@ def setup_middleware(app: FastAPI) -> None:
         app: FastAPI application instance
     """
     # CORS middleware
+    # In development, allow all origins for easier testing
+    allowed_origins = settings.ALLOWED_HOSTS if not settings.is_development() else ["*"]
+    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_HOSTS,
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],

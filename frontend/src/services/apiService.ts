@@ -52,16 +52,34 @@ class ApiService {
   }
 
   private handleError(error: any): Error {
-    if (error.response?.data) {
-      const errorData = error.response.data as ApiResponse
-      return new Error(errorData.message || 'An error occurred')
+    // Handle network errors (no response from server)
+    if (!error.response) {
+      return new Error(error.message || 'Network error occurred')
+    }
+
+    // Extract error message from response
+    const errorData = error.response.data
+    const status = error.response.status
+
+    // Try to get error message from various possible fields
+    let errorMessage = 
+      errorData?.message || 
+      errorData?.detail || 
+      errorData?.error ||
+      error.message
+
+    // Add status code context for auth errors
+    if (status === 403) {
+      errorMessage = errorMessage || 'Access forbidden. Authentication required.'
+    } else if (status === 401) {
+      errorMessage = errorMessage || 'Authentication required.'
+    } else if (status >= 500) {
+      errorMessage = errorMessage || 'Server error occurred. Please try again later.'
+    } else if (!errorMessage) {
+      errorMessage = 'An error occurred'
     }
     
-    if (error.message) {
-      return new Error(error.message)
-    }
-    
-    return new Error('Network error occurred')
+    return new Error(errorMessage)
   }
 
   // Generic HTTP methods

@@ -8,6 +8,7 @@ import {
   handleAnalysisError,
   validatePDFFile,
 } from "../services/pdfAnalysisService";
+import { templateService } from "../services/templateService";
 import type {
   AnalysisMetadata,
   AnalyzePageState,
@@ -28,6 +29,9 @@ const INITIAL_STATE: AnalyzePageState = {
   metadata: null,
   error: null,
   progress: 0,
+  showSaveModal: false,
+  isSaving: false,
+  saveError: null,
 };
 
 /**
@@ -96,12 +100,62 @@ export const useAnalyzePageState = (): UseAnalyzePageState => {
     setState(INITIAL_STATE);
   }, []);
 
+  const handleOpenSaveModal = useCallback(() => {
+    updateState({ showSaveModal: true, saveError: null });
+  }, [updateState]);
+
+  const handleCloseSaveModal = useCallback(() => {
+    updateState({ showSaveModal: false, saveError: null });
+  }, [updateState]);
+
+  const handleSaveTemplate = useCallback(
+    async (data: { name: string; version: string; sepe_url?: string }) => {
+      if (!state.selectedFile) {
+        updateState({ saveError: "No file selected" });
+        return;
+      }
+
+      updateState({ isSaving: true, saveError: null });
+
+      try {
+        await templateService.ingestTemplate({
+          file: state.selectedFile,
+          name: data.name,
+          version: data.version,
+          sepe_url: data.sepe_url,
+        });
+
+        // Success: close modal and reset saving state
+        updateState({
+          isSaving: false,
+          showSaveModal: false,
+          saveError: null,
+        });
+      } catch (error) {
+        // Handle error
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "Failed to save template. Please try again.";
+
+        updateState({
+          isSaving: false,
+          saveError: errorMessage,
+        });
+      }
+    },
+    [state.selectedFile, updateState]
+  );
+
   return {
     state,
     updateState,
     handleFileSelect,
     handleAnalyze,
     handleReset,
+    handleOpenSaveModal,
+    handleCloseSaveModal,
+    handleSaveTemplate,
   };
 };
 

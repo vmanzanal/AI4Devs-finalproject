@@ -1,5 +1,7 @@
 """
-Tests for template API endpoints.
+Tests for template CRUD API endpoints.
+
+Note: Template ingestion tests are in test_ingest_endpoint.py
 """
 
 import os
@@ -15,7 +17,7 @@ from app.models.template import PDFTemplate
 
 
 class TestTemplateEndpoints:
-    """Test cases for template endpoints."""
+    """Test cases for template CRUD endpoints."""
     
     @pytest.fixture
     def test_user(self, db: Session) -> User:
@@ -36,110 +38,6 @@ class TestTemplateEndpoints:
         """Create authentication headers for test user."""
         token = create_access_token(subject=test_user.id)
         return {"Authorization": f"Bearer {token}"}
-    
-    @pytest.fixture
-    def sample_pdf_content(self) -> bytes:
-        """Create sample PDF content for testing."""
-        # This is a minimal PDF content for testing
-        return b"""%PDF-1.4
-1 0 obj
-<<
-/Type /Catalog
-/Pages 2 0 R
->>
-endobj
-2 0 obj
-<<
-/Type /Pages
-/Kids [3 0 R]
-/Count 1
->>
-endobj
-3 0 obj
-<<
-/Type /Page
-/Parent 2 0 R
-/MediaBox [0 0 612 792]
->>
-endobj
-xref
-0 4
-0000000000 65535 f 
-0000000010 00000 n 
-0000000053 00000 n 
-0000000125 00000 n 
-trailer
-<<
-/Size 4
-/Root 1 0 R
->>
-startxref
-185
-%%EOF"""
-    
-    def test_upload_template_valid(self, client: TestClient, auth_headers: dict, sample_pdf_content: bytes):
-        """Test uploading a valid PDF template."""
-        files = {
-            "file": ("test_template.pdf", BytesIO(sample_pdf_content), "application/pdf")
-        }
-        data = {
-            "name": "Test Template",
-            "version": "1.0",
-            "sepe_url": "https://www.sepe.es/test-template"
-        }
-        
-        response = client.post(
-            "/api/v1/templates/upload",
-            files=files,
-            data=data,
-            headers=auth_headers
-        )
-        
-        assert response.status_code == 201
-        result = response.json()
-        assert result["name"] == "Test Template"
-        assert result["version"] == "1.0"
-        assert result["file_size_bytes"] > 0
-        assert "id" in result
-        assert result["message"] == "Template uploaded successfully"
-    
-    def test_upload_template_unauthorized(self, client: TestClient, sample_pdf_content: bytes):
-        """Test uploading template without authentication."""
-        files = {
-            "file": ("test_template.pdf", BytesIO(sample_pdf_content), "application/pdf")
-        }
-        data = {
-            "name": "Test Template",
-            "version": "1.0"
-        }
-        
-        response = client.post(
-            "/api/v1/templates/upload",
-            files=files,
-            data=data
-        )
-        
-        assert response.status_code == 403  # Forbidden
-    
-    def test_upload_template_invalid_file_type(self, client: TestClient, auth_headers: dict):
-        """Test uploading non-PDF file."""
-        files = {
-            "file": ("test_file.txt", BytesIO(b"This is not a PDF"), "text/plain")
-        }
-        data = {
-            "name": "Test Template",
-            "version": "1.0"
-        }
-        
-        response = client.post(
-            "/api/v1/templates/upload",
-            files=files,
-            data=data,
-            headers=auth_headers
-        )
-        
-        assert response.status_code == 400
-        assert "Only PDF files are allowed" in response.json()["detail"]
     
     def test_list_templates_empty(self, client: TestClient):
         """Test listing templates when none exist."""

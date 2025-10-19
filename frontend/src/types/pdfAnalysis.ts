@@ -43,6 +43,10 @@ export interface AnalyzePageState {
   metadata: AnalysisMetadata | null;
   error: string | null;
   progress: number;
+  // Save functionality state
+  showSaveModal: boolean;
+  isSaving: boolean;
+  saveError: string | null;
 }
 
 // File upload validation result
@@ -85,15 +89,23 @@ export interface TableRowProps {
   className?: string;
 }
 
+// Custom error interface for API errors
+export interface AnalysisErrorData {
+  message: string;
+  statusCode?: number;
+  errorCode?: string;
+}
+
 // Custom error class for API errors
 export class AnalysisError extends Error {
-  constructor(
-    message: string,
-    public statusCode?: number,
-    public errorCode?: string
-  ) {
+  statusCode?: number;
+  errorCode?: string;
+
+  constructor(message: string, statusCode?: number, errorCode?: string) {
     super(message);
     this.name = "AnalysisError";
+    this.statusCode = statusCode;
+    this.errorCode = errorCode;
   }
 }
 
@@ -104,6 +116,10 @@ export interface UseAnalyzePageState {
   handleFileSelect: (file: File) => void;
   handleAnalyze: () => Promise<void>;
   handleReset: () => void;
+  // Save functionality handlers
+  handleOpenSaveModal: () => void;
+  handleCloseSaveModal: () => void;
+  handleSaveTemplate: (data: { name: string; version: string; sepe_url?: string }) => Promise<void>;
 }
 
 // Progress tracking callback type

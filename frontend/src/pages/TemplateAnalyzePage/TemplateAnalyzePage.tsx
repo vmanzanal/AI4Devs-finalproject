@@ -2,10 +2,11 @@
  * TemplateAnalyzePage - Main page component for PDF template analysis
  */
 
-import { ArrowLeft, Download, RefreshCw } from "lucide-react";
+import { ArrowLeft, Download, RefreshCw, Save } from "lucide-react";
 import React, { useCallback } from "react";
 import FileUploadZone from "../../components/FileUploadZone/FileUploadZone";
 import TemplateFieldTable from "../../components/TemplateFieldTable/TemplateFieldTable";
+import TemplateSaveModal from "../../components/TemplateSaveModal/TemplateSaveModal";
 import { useAnalyzePageState, useResponsiveBreakpoints } from "../../hooks/usePDFAnalysis";
 import type { TemplateAnalyzePageProps } from "../../types/pdfAnalysis";
 
@@ -119,6 +120,7 @@ interface ActionButtonsProps {
   uploadState: string;
   onAnalyzeAnother: () => void;
   onExportResults: () => void;
+  onSaveTemplate: () => void;
   onRetry: () => void;
   onChooseDifferentFile: () => void;
   hasResults: boolean;
@@ -128,6 +130,7 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
   uploadState,
   onAnalyzeAnother,
   onExportResults,
+  onSaveTemplate,
   onRetry,
   onChooseDifferentFile,
   hasResults,
@@ -136,11 +139,11 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
     return (
       <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
         <button
-          onClick={onAnalyzeAnother}
-          className="flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+          onClick={onSaveTemplate}
+          className="flex items-center justify-center space-x-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" />
-          <span>Analyze Another File</span>
+          <Save className="h-4 w-4" />
+          <span>Guardar como Versión Inicial</span>
         </button>
         <button
           onClick={onExportResults}
@@ -148,6 +151,13 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
         >
           <Download className="h-4 w-4" />
           <span>Export Results</span>
+        </button>
+        <button
+          onClick={onAnalyzeAnother}
+          className="flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Analyze Another File</span>
         </button>
       </div>
     );
@@ -181,7 +191,15 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
  * Main TemplateAnalyzePage component
  */
 const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "" }) => {
-  const { state, handleFileSelect, handleAnalyze, handleReset } = useAnalyzePageState();
+  const {
+    state,
+    handleFileSelect,
+    handleAnalyze,
+    handleReset,
+    handleOpenSaveModal,
+    handleCloseSaveModal,
+    handleSaveTemplate,
+  } = useAnalyzePageState();
   const breakpoints = useResponsiveBreakpoints();
 
   const {
@@ -191,6 +209,9 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
     metadata,
     error,
     progress,
+    showSaveModal,
+    isSaving,
+    saveError,
   } = state;
 
   // Determine responsive padding
@@ -281,6 +302,7 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
             uploadState={uploadState}
             onAnalyzeAnother={handleReset}
             onExportResults={handleExportResults}
+            onSaveTemplate={handleOpenSaveModal}
             onRetry={handleRetry}
             onChooseDifferentFile={handleChooseDifferentFile}
             hasResults={!!analysisResults && analysisResults.length > 0}
@@ -356,6 +378,18 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
           )}
         </main>
       </div>
+
+      {/* Template Save Modal */}
+      {selectedFile && (
+        <TemplateSaveModal
+          isOpen={showSaveModal}
+          onClose={handleCloseSaveModal}
+          onSave={handleSaveTemplate}
+          file={selectedFile}
+          isLoading={isSaving}
+          error={saveError}
+        />
+      )}
     </div>
   );
 };

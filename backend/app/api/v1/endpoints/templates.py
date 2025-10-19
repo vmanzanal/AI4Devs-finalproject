@@ -1,44 +1,41 @@
 """
-Template management endpoints for SEPE Templates Comparator API.
+Template CRUD endpoints for SEPE Templates Comparator API.
+
+This module handles Read, Update, and Delete operations for PDF templates.
+For template ingestion (create with analysis), use the /ingest endpoint.
+For temporary PDF analysis without persistence, use the /analyze endpoint.
 """
 
 import os
-import shutil
 import time
 from typing import Any, List, Optional
 from fastapi import (
-    APIRouter, 
-    Depends, 
-    HTTPException, 
-    status, 
-    UploadFile, 
-    File, 
-    Query,
-    Form
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    UploadFile,
+    File,
+    Query
 )
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, asc
 from pathlib import Path
-from datetime import datetime
 
 from app.core.auth import get_current_active_user, get_optional_current_user
-from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 from app.models.template import PDFTemplate, TemplateVersion
 from app.schemas.template import (
     TemplateResponse,
     TemplateListResponse,
-    TemplateUploadResponse,
     TemplateUpdate,
     TemplateVersionResponse,
 )
 from app.schemas.pdf_analysis import (
     TemplateField,
     AnalysisResponse,
-    ErrorResponse,
     create_analysis_response,
-    create_error_response
 )
 from app.services.pdf_analysis_service import (
     PDFAnalysisService,
@@ -50,129 +47,52 @@ from app.services.pdf_analysis_service import (
 router = APIRouter()
 
 
-@router.post("/upload", response_model=TemplateUploadResponse, status_code=status.HTTP_201_CREATED)
-async def upload_template(
-    name: str = Form(..., max_length=255),
-    version: str = Form(..., max_length=50),
-    sepe_url: Optional[str] = Form(None, max_length=1000),
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-) -> Any:
-    """
-    Upload a new PDF template.
+@router.get(
+    "/",
+    response_model=TemplateListResponse,
+    summary="List Templates",
+    description="""
+    Retrieve a paginated list of ingested PDF templates with filtering and sorting.
     
-    Args:
-        name: Template name
-        version: Template version
-        sepe_url: Optional SEPE URL
-        file: PDF file to upload
-        current_user: Current authenticated user
-        db: Database session
-        
-    Returns:
-        TemplateUploadResponse: Upload result
-        
-    Raises:
-        HTTPException: If file is invalid or upload fails
-    """
-    # Validate file type
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only PDF files are allowed"
-        )
+    This endpoint provides read-only access to the catalog of templates
+    that have been successfully ingested and stored in the system.
     
-    # Validate file size
-    file_size = 0
-    content = await file.read()
-    file_size = len(content)
+    **Features:**
+    - Pagination with configurable page size
+    - Full-text search by template name or version
+    - Flexible sorting by any template field
+    - Public access (no authentication required)
     
-    if file_size > settings.max_file_size_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File size exceeds maximum allowed size of {settings.MAX_FILE_SIZE_MB}MB"
-        )
-    
-    # Create upload directory if it doesn't exist
-    upload_dir = settings.UPLOAD_DIRECTORY
-    os.makedirs(upload_dir, exist_ok=True)
-    
-    # Generate unique filename
-    import uuid
-    file_id = str(uuid.uuid4())
-    file_extension = os.path.splitext(file.filename)[1]
-    filename = f"{file_id}{file_extension}"
-    file_path = os.path.join(upload_dir, filename)
-    
-    try:
-        # Save file
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        
-        # TODO: Extract field count from PDF
-        # For now, we'll use a placeholder
-        field_count = 0
-        
-        # Create database record
-        db_template = PDFTemplate(
-            name=name,
-            version=version,
-            file_path=file_path,
-            file_size_bytes=file_size,
-            field_count=field_count,
-            sepe_url=sepe_url,
-            uploaded_by=current_user.id
-        )
-        
-        db.add(db_template)
-        db.commit()
-        db.refresh(db_template)
-        
-        return TemplateUploadResponse(
-            id=db_template.id,
-            name=db_template.name,
-            version=db_template.version,
-            file_path=db_template.file_path,
-            file_size_bytes=db_template.file_size_bytes,
-            field_count=db_template.field_count,
-            message="Template uploaded successfully"
-        )
-        
-    except Exception as e:
-        # Clean up file if database operation fails
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload template: {str(e)}"
-        )
-
-
-@router.get("/", response_model=TemplateListResponse)
+    **Use Cases:**
+    - Browse available templates for comparison
+    - Search for specific template versions
+    - Display template catalog in UI
+    """,
+    tags=["Templates - CRUD"]
+)
 def list_templates(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(10, ge=1, le=100, description="Number of records to return"),
     search: Optional[str] = Query(None, description="Search by name or version"),
     sort_by: str = Query("created_at", description="Sort field"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    List PDF templates with pagination and filtering.
+    List PDF templates with pagination, filtering, and sorting.
     
     Args:
-        skip: Number of records to skip
-        limit: Number of records to return
-        search: Optional search term
-        sort_by: Field to sort by
-        sort_order: Sort order (asc/desc)
-        current_user: Optional current user
+        skip: Number of records to skip for pagination
+        limit: Maximum number of records to return (1-100)
+        search: Optional search term for filtering by name or version
+        sort_by: Field name to sort by (default: created_at)
+        sort_order: Sort direction - 'asc' or 'desc' (default: desc)
+        current_user: Optional authenticated user (for personalization)
         db: Database session
         
     Returns:
-        TemplateListResponse: Paginated list of templates
+        TemplateListResponse: Paginated list with items, total count, and pagination info
     """
     query = db.query(PDFTemplate)
     
@@ -221,7 +141,13 @@ def list_templates(
     )
 
 
-@router.get("/{template_id}", response_model=TemplateResponse)
+@router.get(
+    "/{template_id}",
+    response_model=TemplateResponse,
+    summary="Get Template by ID",
+    description="Retrieve detailed information about a specific template.",
+    tags=["Templates - CRUD"]
+)
 def get_template(
     template_id: int,
     current_user: Optional[User] = Depends(get_optional_current_user),
@@ -231,15 +157,15 @@ def get_template(
     Get a specific template by ID.
     
     Args:
-        template_id: Template ID
-        current_user: Optional current user
+        template_id: Unique template identifier
+        current_user: Optional authenticated user
         db: Database session
         
     Returns:
-        TemplateResponse: Template data
+        TemplateResponse: Complete template data including metadata
         
     Raises:
-        HTTPException: If template not found
+        HTTPException 404: If template not found
     """
     template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
     
@@ -263,7 +189,25 @@ def get_template(
     )
 
 
-@router.put("/{template_id}", response_model=TemplateResponse)
+@router.put(
+    "/{template_id}",
+    response_model=TemplateResponse,
+    summary="Update Template Metadata",
+    description="""
+    Update metadata for an existing template.
+    
+    **Authentication Required:** Only the template owner or superuser can update.
+    
+    **Updatable Fields:**
+    - name
+    - version  
+    - sepe_url
+    
+    **Note:** The PDF file itself cannot be updated. To change the PDF,
+    ingest a new version using the /ingest endpoint.
+    """,
+    tags=["Templates - CRUD"]
+)
 def update_template(
     template_id: int,
     template_data: TemplateUpdate,
@@ -271,19 +215,20 @@ def update_template(
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Update template metadata.
+    Update template metadata (name, version, sepe_url).
     
     Args:
-        template_id: Template ID
-        template_data: Template update data
-        current_user: Current authenticated user
+        template_id: Unique template identifier
+        template_data: Fields to update (only non-null fields are updated)
+        current_user: Authenticated user (must be owner or superuser)
         db: Database session
         
     Returns:
         TemplateResponse: Updated template data
         
     Raises:
-        HTTPException: If template not found or access denied
+        HTTPException 404: If template not found
+        HTTPException 403: If user lacks permission to update
     """
     template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
     
@@ -322,25 +267,42 @@ def update_template(
     )
 
 
-@router.delete("/{template_id}")
+@router.delete(
+    "/{template_id}",
+    summary="Delete Template",
+    description="""
+    Permanently delete a template and its associated PDF file.
+    
+    **Authentication Required:** Only the template owner or superuser can delete.
+    
+    **Warning:** This action is irreversible. The template record, all versions,
+    fields, and the PDF file will be permanently removed.
+    
+    **Cascade Deletion:** Related records (versions, fields, comparisons) are
+    automatically deleted via database constraints.
+    """,
+    tags=["Templates - CRUD"]
+)
 def delete_template(
     template_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Delete a template.
+    Permanently delete a template and its PDF file.
     
     Args:
-        template_id: Template ID
-        current_user: Current authenticated user
+        template_id: Unique template identifier
+        current_user: Authenticated user (must be owner or superuser)
         db: Database session
         
     Returns:
-        dict: Success message
+        dict: Success confirmation message
         
     Raises:
-        HTTPException: If template not found or access denied
+        HTTPException 404: If template not found
+        HTTPException 403: If user lacks permission to delete
+        HTTPException 500: If deletion fails
     """
     template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
     
@@ -376,25 +338,36 @@ def delete_template(
         )
 
 
-@router.get("/{template_id}/versions", response_model=List[TemplateVersionResponse])
+@router.get(
+    "/{template_id}/versions",
+    response_model=List[TemplateVersionResponse],
+    summary="Get Template Versions",
+    description="""
+    Retrieve all versions of a specific template.
+    
+    Returns version history sorted by creation date (newest first).
+    Useful for tracking template changes and evolution over time.
+    """,
+    tags=["Templates - CRUD"]
+)
 def get_template_versions(
     template_id: int,
     current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Get all versions of a template.
+    Get all versions of a template, sorted by creation date (newest first).
     
     Args:
-        template_id: Template ID
-        current_user: Optional current user
+        template_id: Unique template identifier
+        current_user: Optional authenticated user
         db: Database session
         
     Returns:
-        List[TemplateVersionResponse]: List of template versions
+        List[TemplateVersionResponse]: Ordered list of template versions
         
     Raises:
-        HTTPException: If template not found
+        HTTPException 404: If template not found
     """
     # Check if template exists
     template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
@@ -422,11 +395,16 @@ def get_template_versions(
     ]
 
 
-@router.post("/analyze", 
+@router.post(
+    "/analyze",
     response_model=AnalysisResponse,
-    summary="Analyze PDF Template Fields",
+    summary="Analyze PDF Template Fields (Temporary)",
     description="""
     Analyze an uploaded PDF template and extract its AcroForm field structure.
+    
+    **Important:** This endpoint performs temporary analysis without persisting data.
+    - For permanent storage with analysis, use the `/ingest` endpoint instead.
+    - This endpoint is ideal for preview/validation before ingestion.
     
     This endpoint processes PDF files containing form fields (such as SEPE templates) 
     and returns a structured analysis of all form fields found in the document.
