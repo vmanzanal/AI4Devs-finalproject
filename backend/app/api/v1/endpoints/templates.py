@@ -8,7 +8,8 @@ For temporary PDF analysis without persistence, use the /analyze endpoint.
 
 import os
 import time
-from typing import Any, List, Optional
+import re
+from typing import Any, Optional
 from fastapi import (
     APIRouter,
     Depends,
@@ -18,22 +19,31 @@ from fastapi import (
     File,
     Query
 )
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, asc
+from sqlalchemy import desc, asc, or_
 from pathlib import Path
 
 from app.core.auth import get_current_active_user, get_optional_current_user
 from app.core.database import get_db
 from app.models.user import User
-from app.models.template import PDFTemplate, TemplateVersion
+from app.models.template import (
+    PDFTemplate,
+    TemplateVersion,
+    TemplateField as TemplateFieldModel
+)
 from app.schemas.template import (
     TemplateResponse,
     TemplateListResponse,
     TemplateUpdate,
     TemplateVersionResponse,
+    TemplateVersionListResponse,
+    TemplateFieldResponse,
+    TemplateFieldListResponse,
+    VersionInfo,
 )
 from app.schemas.pdf_analysis import (
-    TemplateField,
+    TemplateField as TemplateFieldSchema,
     AnalysisResponse,
     create_analysis_response,
 )
@@ -339,35 +349,120 @@ def delete_template(
 
 
 @router.get(
+    "/{template_id}/download",
+    summary="Download Template PDF",
+    description="""
+    Download the PDF file of a template's current version.
+    
+    **Authentication Required:** JWT Bearer token
+    
+    **Response:** Binary PDF file with appropriate headers for download
+    
+    **Filename Format:** `{template_name}_v{version}.pdf`
+    
+    Special characters in filenames are sanitized for compatibility.
+    """,
+    tags=["Templates - CRUD"],
+    response_class=FileResponse
+)
+def download_template(
+    template_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> FileResponse:
+    """
+    Download template PDF file.
+    
+    Args:
+        template_id: Unique template identifier
+        current_user: Authenticated user
+        db: Database session
+        
+    Returns:
+        FileResponse: PDF file stream with download headers
+        
+    Raises:
+        HTTPException 404: If template or file not found
+        HTTPException 401: If not authenticated
+    """
+    # Get template
+    template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
+    
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found"
+        )
+    
+    # Check if file exists
+    if not os.path.exists(template.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="PDF file not found on disk"
+        )
+    
+    # Sanitize filename for download
+    # Replace spaces with underscores and remove special characters
+    safe_name = re.sub(r'[^\w\s-]', '', template.name)
+    safe_name = re.sub(r'[\s]+', '_', safe_name)
+    safe_version = re.sub(r'[^\w.-]', '', template.version)
+    filename = f"{safe_name}_v{safe_version}.pdf"
+    
+    return FileResponse(
+        path=template.file_path,
+        media_type="application/pdf",
+        filename=filename,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+@router.get(
     "/{template_id}/versions",
-    response_model=List[TemplateVersionResponse],
+    response_model=TemplateVersionListResponse,
     summary="Get Template Versions",
     description="""
-    Retrieve all versions of a specific template.
+    Retrieve all versions of a specific template with pagination and sorting.
     
-    Returns version history sorted by creation date (newest first).
-    Useful for tracking template changes and evolution over time.
+    Returns version history with full PDF metadata including title, author,
+    subject, page count, and document dates.
+    
+    **Features:**
+    - Pagination support
+    - Sorting by created_at, version_number, or page_count
+    - Ascending or descending order
+    - Current version highlighted
     """,
     tags=["Templates - CRUD"]
 )
 def get_template_versions(
     template_id: int,
+    limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    offset: int = Query(0, ge=0, description="Number of results to skip"),
+    sort_by: str = Query("created_at", description="Sort field: created_at, version_number, page_count"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Get all versions of a template, sorted by creation date (newest first).
+    Get all versions of a template with pagination and sorting.
     
     Args:
         template_id: Unique template identifier
+        limit: Maximum number of results (1-100)
+        offset: Number of results to skip
+        sort_by: Field to sort by
+        sort_order: Sort direction (asc/desc)
         current_user: Optional authenticated user
         db: Database session
         
     Returns:
-        List[TemplateVersionResponse]: Ordered list of template versions
+        TemplateVersionListResponse: Paginated list of versions with metadata
         
     Raises:
         HTTPException 404: If template not found
+        HTTPException 422: If invalid sort parameters
     """
     # Check if template exists
     template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
@@ -377,22 +472,50 @@ def get_template_versions(
             detail="Template not found"
         )
     
-    # Get versions
-    versions = db.query(TemplateVersion).filter(
+    # Build query
+    query = db.query(TemplateVersion).filter(
         TemplateVersion.template_id == template_id
-    ).order_by(desc(TemplateVersion.created_at)).all()
+    )
     
-    return [
-        TemplateVersionResponse(
-            id=version.id,
-            template_id=version.template_id,
-            version_number=version.version_number,
-            change_summary=version.change_summary,
-            is_current=version.is_current,
-            created_at=version.created_at
-        )
-        for version in versions
-    ]
+    # Apply sorting
+    valid_sort_fields = ["created_at", "version_number", "page_count"]
+    if sort_by not in valid_sort_fields:
+        sort_by = "created_at"
+    
+    sort_column = getattr(TemplateVersion, sort_by)
+    if sort_order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(asc(sort_column))
+    
+    # Get total count
+    total = query.count()
+    
+    # Apply pagination
+    versions = query.offset(offset).limit(limit).all()
+    
+    return TemplateVersionListResponse(
+        items=[
+            TemplateVersionResponse(
+                id=version.id,
+                template_id=version.template_id,
+                version_number=version.version_number,
+                change_summary=version.change_summary,
+                is_current=version.is_current,
+                created_at=version.created_at,
+                title=version.title,
+                author=version.author,
+                subject=version.subject,
+                creation_date=version.creation_date,
+                modification_date=version.modification_date,
+                page_count=version.page_count
+            )
+            for version in versions
+        ],
+        total=total,
+        limit=limit,
+        offset=offset
+    )
 
 
 @router.post(
@@ -611,7 +734,7 @@ async def analyze_pdf_template(
             # Convert service results to Pydantic models
             template_fields = []
             for field_data in analysis_results:
-                template_field = TemplateField(
+                template_field = TemplateFieldSchema(
                     field_id=field_data.field_id,
                     type=field_data.type,
                     near_text=field_data.near_text,
@@ -674,3 +797,270 @@ async def analyze_pdf_template(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while processing the PDF. Please try again."
         )
+
+
+@router.get(
+    "/{template_id}/fields/current",
+    response_model=TemplateFieldListResponse,
+    summary="Get Current Version Fields",
+    description="""
+    Retrieve all AcroForm fields from the current version of a template.
+    
+    **Features:**
+    - Pagination support (default 20 items per page)
+    - Search by field_id or near_text (case-insensitive)
+    - Filter by page_number
+    - Fields ordered by page_number, then field_page_order
+    - Includes version metadata in response
+    
+    **Use Cases:**
+    - Display template structure in UI
+    - Field mapping and comparison
+    - Form generation and validation
+    """,
+    tags=["Templates - Fields"]
+)
+def get_current_version_fields(
+    template_id: int,
+    limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    offset: int = Query(0, ge=0, description="Number of results to skip"),
+    page_number: Optional[int] = Query(None, ge=1, description="Filter by page number"),
+    search: Optional[str] = Query(None, description="Search in field_id or near_text"),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Get all fields from the current version of a template.
+    
+    Args:
+        template_id: Unique template identifier
+        limit: Maximum number of results (1-100)
+        offset: Number of results to skip
+        page_number: Optional page filter
+        search: Optional search term
+        current_user: Optional authenticated user
+        db: Database session
+        
+    Returns:
+        TemplateFieldListResponse: Paginated list of fields with version info
+        
+    Raises:
+        HTTPException 404: If template or current version not found
+    """
+    # Check if template exists
+    template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found"
+        )
+    
+    # Find current version
+    current_version = db.query(TemplateVersion).filter(
+        TemplateVersion.template_id == template_id,
+        TemplateVersion.is_current == True
+    ).first()
+    
+    if not current_version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No current version found for this template"
+        )
+    
+    # Build query for fields
+    query = db.query(TemplateFieldModel).filter(
+        TemplateFieldModel.version_id == current_version.id
+    )
+    
+    # Apply page filter if provided
+    if page_number is not None:
+        query = query.filter(TemplateFieldModel.page_number == page_number)
+    
+    # Apply search filter if provided
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                TemplateFieldModel.field_id.ilike(search_term),
+                TemplateFieldModel.near_text.ilike(search_term)
+            )
+        )
+    
+    # Order by page and field order
+    query = query.order_by(
+        asc(TemplateFieldModel.page_number),
+        asc(TemplateFieldModel.field_page_order)
+    )
+    
+    # Get total count
+    total = query.count()
+    
+    # Apply pagination
+    fields = query.offset(offset).limit(limit).all()
+    
+    # Build version info
+    version_info = VersionInfo(
+        version_id=current_version.id,
+        version_number=current_version.version_number,
+        field_count=total
+    )
+    
+    return TemplateFieldListResponse(
+        items=[
+            TemplateFieldResponse(
+                id=field.id,
+                version_id=field.version_id,
+                field_id=field.field_id,
+                field_type=field.field_type,
+                raw_type=field.raw_type,
+                page_number=field.page_number,
+                field_page_order=field.field_page_order,
+                near_text=field.near_text,
+                value_options=field.value_options,
+                position_data=field.position_data,
+                created_at=field.created_at
+            )
+            for field in fields
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+        version_info=version_info
+    )
+
+
+@router.get(
+    "/{template_id}/versions/{version_id}/fields",
+    response_model=TemplateFieldListResponse,
+    summary="Get Specific Version Fields",
+    description="""
+    Retrieve all AcroForm fields from a specific version of a template.
+    
+    **Features:**
+    - Same features as current version endpoint
+    - Useful for historical analysis and version comparison
+    - Validates that version belongs to template
+    
+    **Use Cases:**
+    - Compare field changes between versions
+    - Historical analysis of template evolution
+    - Audit trail and documentation
+    """,
+    tags=["Templates - Fields"]
+)
+def get_version_fields(
+    template_id: int,
+    version_id: int,
+    limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    offset: int = Query(0, ge=0, description="Number of results to skip"),
+    page_number: Optional[int] = Query(None, ge=1, description="Filter by page number"),
+    search: Optional[str] = Query(None, description="Search in field_id or near_text"),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Get all fields from a specific version of a template.
+    
+    Args:
+        template_id: Unique template identifier
+        version_id: Unique version identifier
+        limit: Maximum number of results (1-100)
+        offset: Number of results to skip
+        page_number: Optional page filter
+        search: Optional search term
+        current_user: Optional authenticated user
+        db: Database session
+        
+    Returns:
+        TemplateFieldListResponse: Paginated list of fields with version info
+        
+    Raises:
+        HTTPException 404: If template or version not found
+        HTTPException 400: If version doesn't belong to template
+    """
+    # Check if template exists
+    template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found"
+        )
+    
+    # Find specific version
+    version = db.query(TemplateVersion).filter(
+        TemplateVersion.id == version_id
+    ).first()
+    
+    if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version not found"
+        )
+    
+    # Verify version belongs to template
+    if version.template_id != template_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Version {version_id} does not belong to template {template_id}"
+        )
+    
+    # Build query for fields
+    query = db.query(TemplateFieldModel).filter(
+        TemplateFieldModel.version_id == version_id
+    )
+    
+    # Apply page filter if provided
+    if page_number is not None:
+        query = query.filter(TemplateFieldModel.page_number == page_number)
+    
+    # Apply search filter if provided
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                TemplateFieldModel.field_id.ilike(search_term),
+                TemplateFieldModel.near_text.ilike(search_term)
+            )
+        )
+    
+    # Order by page and field order
+    query = query.order_by(
+        asc(TemplateFieldModel.page_number),
+        asc(TemplateFieldModel.field_page_order)
+    )
+    
+    # Get total count
+    total = query.count()
+    
+    # Apply pagination
+    fields = query.offset(offset).limit(limit).all()
+    
+    # Build version info
+    version_info = VersionInfo(
+        version_id=version.id,
+        version_number=version.version_number,
+        field_count=total
+    )
+    
+    return TemplateFieldListResponse(
+        items=[
+            TemplateFieldResponse(
+                id=field.id,
+                version_id=field.version_id,
+                field_id=field.field_id,
+                field_type=field.field_type,
+                raw_type=field.raw_type,
+                page_number=field.page_number,
+                field_page_order=field.field_page_order,
+                near_text=field.near_text,
+                value_options=field.value_options,
+                position_data=field.position_data,
+                created_at=field.created_at
+            )
+            for field in fields
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+        version_info=version_info
+    )

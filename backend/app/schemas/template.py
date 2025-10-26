@@ -49,16 +49,65 @@ class TemplateListResponse(BaseModel):
 
 
 class TemplateVersionResponse(BaseModel):
-    """Schema for template version response."""
+    """Schema for template version response with full metadata."""
     id: int
     template_id: int
     version_number: str
     change_summary: Optional[str] = None
     is_current: bool
     created_at: datetime
+    # PDF Document Metadata
+    title: Optional[str] = None
+    author: Optional[str] = None
+    subject: Optional[str] = None
+    creation_date: Optional[datetime] = None
+    modification_date: Optional[datetime] = None
+    page_count: int
     
     class Config:
         from_attributes = True
+
+
+class TemplateVersionListResponse(BaseModel):
+    """Schema for paginated template version list response."""
+    items: List[TemplateVersionResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class TemplateFieldResponse(BaseModel):
+    """Schema for template field response."""
+    id: int
+    version_id: int
+    field_id: str
+    field_type: str
+    raw_type: Optional[str] = None
+    page_number: int
+    field_page_order: int
+    near_text: Optional[str] = None
+    value_options: Optional[List[str]] = None
+    position_data: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class VersionInfo(BaseModel):
+    """Schema for version metadata included in fields response."""
+    version_id: int
+    version_number: str
+    field_count: int
+
+
+class TemplateFieldListResponse(BaseModel):
+    """Schema for paginated template field list response."""
+    items: List[TemplateFieldResponse]
+    total: int
+    limit: int
+    offset: int
+    version_info: VersionInfo
 
 
 class TemplateUploadResponse(BaseModel):
