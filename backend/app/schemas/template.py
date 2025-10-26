@@ -204,6 +204,7 @@ class TemplateIngestResponse(BaseModel):
     Schema for template ingestion response.
 
     Returns template information with current version data.
+    Includes version_id to allow direct navigation to success page.
     """
 
     id: int
@@ -220,6 +221,9 @@ class TemplateIngestResponse(BaseModel):
     sepe_url: Optional[str] = None  # From current version
     checksum: str = Field(..., description="SHA256 checksum of file")
     message: str = "Template ingested successfully"
+    version_id: int = Field(
+        ..., description="ID of the created version for navigation to success page"
+    )
 
 
 class TemplateFieldData(BaseModel):
@@ -241,3 +245,64 @@ class TemplateFieldData(BaseModel):
     position_data: Optional[Dict[str, Any]] = Field(
         None, description="Field position coordinates"
     )
+
+
+# Version Detail Response (for success pages)
+
+
+class TemplateBasicInfo(BaseModel):
+    """
+    Basic template information for version detail response.
+    
+    Used when we need to include template context in version responses,
+    such as success pages after template creation.
+    """
+
+    id: int
+    name: str
+    current_version: str
+    comment: Optional[str] = None
+    uploaded_by: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TemplateVersionDetailResponse(BaseModel):
+    """
+    Detailed template version response with associated template info.
+
+    Used for success pages and version detail views where we need
+    both version and template information in one response.
+    
+    This combines TemplateVersion data with basic template information
+    to minimize API calls from the frontend.
+    """
+
+    # Version information
+    id: int
+    version_number: str
+    change_summary: Optional[str] = None
+    is_current: bool
+    created_at: datetime
+
+    # File information (version-specific)
+    file_path: str
+    file_size_bytes: int
+    field_count: int
+    sepe_url: Optional[str] = None
+
+    # PDF metadata
+    title: Optional[str] = None
+    author: Optional[str] = None
+    subject: Optional[str] = None
+    creation_date: Optional[datetime] = None
+    modification_date: Optional[datetime] = None
+    page_count: int
+
+    # Associated template
+    template: TemplateBasicInfo
+
+    class Config:
+        from_attributes = True

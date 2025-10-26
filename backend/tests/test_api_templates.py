@@ -897,3 +897,251 @@ class TestTemplateEndpoints:
         response = client.get(f"/api/v1/templates/{template.id}/versions/99999/fields")
         assert response.status_code == 404
         assert "Version not found" in response.json()["detail"]
+
+
+class TestGetVersionById:
+    """Test cases for GET /api/v1/templates/versions/{version_id} endpoint."""
+    
+    @pytest.fixture
+    def test_user(self, db: Session) -> User:
+        """Create a test user."""
+        user = User(
+            email="versiontest@example.com",
+            hashed_password=get_password_hash("testpassword123"),
+            full_name="Version Test User",
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+    
+    @pytest.fixture
+    def auth_headers(self, test_user: User) -> dict:
+        """Create authentication headers for test user."""
+        token = create_access_token(subject=str(test_user.id))
+        return {"Authorization": f"Bearer {token}"}
+    
+    def create_template_with_version(
+        self, 
+        db: Session, 
+        name: str, 
+        version: str, 
+        user_id: int,
+        file_path: str = "/test/file.pdf",
+        file_size_bytes: int = 2621440,
+        field_count: int = 48
+    ) -> tuple[PDFTemplate, TemplateVersion]:
+        """Helper to create a template with its version."""
+        template = PDFTemplate(
+            name=name,
+            current_version=version,
+            comment="Test template comment",
+            uploaded_by=user_id
+        )
+        db.add(template)
+        db.flush()
+        
+        # Create version
+        version_record = TemplateVersion(
+            template_id=template.id,
+            version_number=version,
+            is_current=True,
+            file_path=file_path,
+            file_size_bytes=file_size_bytes,
+            field_count=field_count,
+            sepe_url="https://www.sepe.es/test",
+            title="Test Template Title",
+            author="SEPE",
+            subject="Test Subject",
+            page_count=5
+        )
+        db.add(version_record)
+        db.commit()
+        db.refresh(template)
+        db.refresh(version_record)
+        
+        return template, version_record
+    
+    def test_get_version_by_id_success(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test successfully retrieving a version by ID."""
+        template, version = self.create_template_with_version(
+            db, "Test Template", "1.0", test_user.id
+        )
+        
+        response = client.get(
+            f"/api/v1/templates/versions/{version.id}",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify version data
+        assert data["id"] == version.id
+        assert data["version_number"] == "1.0"
+        assert data["is_current"] is True
+        assert data["file_path"] == "/test/file.pdf"
+        assert data["file_size_bytes"] == 2621440
+        assert data["field_count"] == 48
+        assert data["sepe_url"] == "https://www.sepe.es/test"
+        assert data["title"] == "Test Template Title"
+        assert data["author"] == "SEPE"
+        assert data["subject"] == "Test Subject"
+        assert data["page_count"] == 5
+        
+        # Verify template data
+        assert data["template"]["id"] == template.id
+        assert data["template"]["name"] == "Test Template"
+        assert data["template"]["current_version"] == "1.0"
+        assert data["template"]["comment"] == "Test template comment"
+        assert data["template"]["uploaded_by"] == test_user.id
+    
+    def test_get_version_by_id_not_found(
+        self, 
+        client: TestClient, 
+        auth_headers: dict
+    ):
+        """Test retrieving a non-existent version."""
+        response = client.get(
+            "/api/v1/templates/versions/99999",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+    
+    def test_get_version_by_id_unauthorized(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        test_user: User
+    ):
+        """Test retrieving a version without authentication."""
+        template, version = self.create_template_with_version(
+            db, "Test Template", "1.0", test_user.id
+        )
+        
+        response = client.get(f"/api/v1/templates/versions/{version.id}")
+        
+        assert response.status_code == 401
+    
+    def test_get_version_by_id_with_null_fields(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test retrieving a version with null optional fields."""
+        template = PDFTemplate(
+            name="Minimal Template",
+            current_version="1.0",
+            comment=None,  # Null comment
+            uploaded_by=test_user.id
+        )
+        db.add(template)
+        db.flush()
+        
+        version = TemplateVersion(
+            template_id=template.id,
+            version_number="1.0",
+            is_current=True,
+            file_path="/test/minimal.pdf",
+            file_size_bytes=1024,
+            field_count=0,
+            sepe_url=None,  # Null sepe_url
+            title=None,  # Null metadata
+            author=None,
+            subject=None,
+            creation_date=None,
+            modification_date=None,
+            page_count=1
+        )
+        db.add(version)
+        db.commit()
+        db.refresh(version)
+        
+        response = client.get(
+            f"/api/v1/templates/versions/{version.id}",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Verify null fields are properly serialized
+        assert data["sepe_url"] is None
+        assert data["title"] is None
+        assert data["author"] is None
+        assert data["subject"] is None
+        assert data["creation_date"] is None
+        assert data["modification_date"] is None
+        assert data["template"]["comment"] is None
+    
+    def test_get_version_by_id_multiple_versions(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test retrieving a specific version when multiple versions exist."""
+        # Create template
+        template = PDFTemplate(
+            name="Multi-Version Template",
+            current_version="2.0",
+            uploaded_by=test_user.id
+        )
+        db.add(template)
+        db.flush()
+        
+        # Create version 1.0 (old)
+        version_1 = TemplateVersion(
+            template_id=template.id,
+            version_number="1.0",
+            is_current=False,
+            file_path="/test/v1.pdf",
+            file_size_bytes=1000,
+            field_count=10,
+            page_count=1
+        )
+        db.add(version_1)
+        
+        # Create version 2.0 (current)
+        version_2 = TemplateVersion(
+            template_id=template.id,
+            version_number="2.0",
+            is_current=True,
+            file_path="/test/v2.pdf",
+            file_size_bytes=2000,
+            field_count=20,
+            page_count=2
+        )
+        db.add(version_2)
+        db.commit()
+        db.refresh(version_1)
+        db.refresh(version_2)
+        
+        # Fetch version 1
+        response = client.get(
+            f"/api/v1/templates/versions/{version_1.id}",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == version_1.id
+        assert data["version_number"] == "1.0"
+        assert data["is_current"] is False
+        assert data["file_path"] == "/test/v1.pdf"
+        assert data["field_count"] == 10
+        
+        # Template still shows current version 2.0
+        assert data["template"]["current_version"] == "2.0"

@@ -4,6 +4,7 @@
 
 import { ArrowLeft, Download, RefreshCw, Save } from "lucide-react";
 import React, { useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import FileUploadZone from "../../components/FileUploadZone/FileUploadZone";
 import TemplateFieldTable from "../../components/TemplateFieldTable/TemplateFieldTable";
 import TemplateSaveModal from "../../components/TemplateSaveModal/TemplateSaveModal";
@@ -191,6 +192,8 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
  * Main TemplateAnalyzePage component
  */
 const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "" }) => {
+  const navigate = useNavigate();
+  
   const {
     state,
     handleFileSelect,
@@ -217,6 +220,17 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
   // Determine responsive padding
   const containerPadding = breakpoints.mobile ? "px-4" : breakpoints.tablet ? "px-6" : "px-8";
   const maxWidth = breakpoints.mobile ? "max-w-full" : "max-w-6xl";
+
+  // Wrap handleSaveTemplate to add navigation after success
+  const handleSaveTemplateWithNavigation = useCallback(
+    async (data: { name: string; version: string; sepe_url?: string; comment?: string }) => {
+      await handleSaveTemplate(data, (versionId: number) => {
+        // Navigate to success page after successful save
+        navigate(`/templates/created/${versionId}`);
+      });
+    },
+    [handleSaveTemplate, navigate]
+  );
 
   // Export results to JSON
   const handleExportResults = useCallback(() => {
@@ -384,7 +398,7 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
         <TemplateSaveModal
           isOpen={showSaveModal}
           onClose={handleCloseSaveModal}
-          onSave={handleSaveTemplate}
+          onSave={handleSaveTemplateWithNavigation}
           file={selectedFile}
           isLoading={isSaving}
           error={saveError}

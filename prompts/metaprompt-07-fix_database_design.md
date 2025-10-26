@@ -1,4 +1,4 @@
-# Spec:
+# Spec: 2025-10-26-01-database-version-refactor
 
 ## METAPROMPT LLM GEMINI
 

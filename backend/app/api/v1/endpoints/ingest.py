@@ -278,7 +278,7 @@ async def ingest_template(
         # Get current version data for response
         current_version = template.current_version_record
 
-        # Return success response
+        # Return success response with version_id for navigation
         return TemplateIngestResponse(
             id=int(template.id),  # type: ignore
             name=str(template.name),
@@ -290,7 +290,8 @@ async def ingest_template(
             field_count=int(current_version.field_count) if current_version else 0,  # type: ignore
             sepe_url=current_version.sepe_url if current_version else None,
             checksum=checksum,
-            message="Template ingested successfully"
+            message="Template ingested successfully",
+            version_id=int(current_version.id) if current_version else 0  # type: ignore
         )
 
     except HTTPException:

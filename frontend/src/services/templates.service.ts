@@ -22,6 +22,7 @@ import type {
     TemplateFieldListResponse,
     TemplateListResponse,
     TemplatesFilters,
+    TemplateVersionDetail,
     TemplateVersionListResponse,
     VersionsFilters,
 } from '../types/templates.types';
@@ -163,6 +164,90 @@ class TemplatesService {
       `/templates/${templateId}/versions`,
       params
     );
+  }
+
+  /**
+   * Fetch detailed information about a specific template version by ID
+   *
+   * Returns complete version metadata along with associated template information
+   * in a single response. This is designed for success pages and version detail
+   * views where both version and template data are needed together.
+   *
+   * @param versionId - The unique ID of the version
+   * @returns Promise resolving to detailed version information with template context
+   * @throws Error if version not found or API request fails
+   *
+   * @example
+   * ```typescript
+   * // Fetch version details for success page after ingestion
+   * const versionDetail = await templatesService.getVersionById(1);
+   * console.log(versionDetail.template.name); // Access template info
+   * console.log(versionDetail.file_size_bytes); // Access version-specific data
+   * ```
+   */
+  async getVersionById(versionId: number): Promise<TemplateVersionDetail> {
+    return apiService.get<TemplateVersionDetail>(
+      `/templates/versions/${versionId}`
+    );
+  }
+
+  /**
+   * Download a template version PDF file
+   *
+   * Downloads the PDF file for a specific template version (not just current version).
+   * This is useful for success pages, version history, and archival purposes.
+   * Returns a Blob object and the suggested filename from the server.
+   *
+   * @param versionId - The ID of the template version to download
+   * @returns Promise resolving to Blob and filename
+   * @throws Error if download fails or version not found
+   *
+   * @example
+   * ```typescript
+   * // Download specific version after creation
+   * const { blob, filename } = await templatesService.downloadTemplateVersion(1);
+   * downloadBlob(blob, filename);
+   * ```
+   */
+  async downloadTemplateVersion(
+    versionId: number
+  ): Promise<{ blob: Blob; filename: string }> {
+    const token = localStorage.getItem('access_token');
+    const baseURL =
+      import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+    const response = await fetch(
+      `${baseURL}/templates/versions/${versionId}/download`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download version: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const blob = await response.blob();
+
+    // Extract filename from Content-Disposition header
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = `template_version_${versionId}.pdf`;
+
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(
+        /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
+      );
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, '');
+      }
+    }
+
+    return { blob, filename };
   }
 
   /**

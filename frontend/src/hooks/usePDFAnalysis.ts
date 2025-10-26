@@ -4,19 +4,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  analyzePDFWithRetry,
-  handleAnalysisError,
-  validatePDFFile,
+    analyzePDFWithRetry,
+    handleAnalysisError,
+    validatePDFFile,
 } from "../services/pdfAnalysisService";
 import { templateService } from "../services/templateService";
 import type {
-  AnalysisMetadata,
-  AnalyzePageState,
-  DragState,
-  ProgressCallback,
-  ResponsiveBreakpoints,
-  TemplateField,
-  UseAnalyzePageState
+    AnalysisMetadata,
+    AnalyzePageState,
+    DragState,
+    ProgressCallback,
+    ResponsiveBreakpoints,
+    TemplateField,
+    UseAnalyzePageState
 } from "../types/pdfAnalysis";
 
 /**
@@ -109,7 +109,10 @@ export const useAnalyzePageState = (): UseAnalyzePageState => {
   }, [updateState]);
 
   const handleSaveTemplate = useCallback(
-    async (data: { name: string; version: string; sepe_url?: string }) => {
+    async (
+      data: { name: string; version: string; sepe_url?: string; comment?: string },
+      onSuccess?: (versionId: number) => void
+    ) => {
       if (!state.selectedFile) {
         updateState({ saveError: "No file selected" });
         return;
@@ -118,11 +121,12 @@ export const useAnalyzePageState = (): UseAnalyzePageState => {
       updateState({ isSaving: true, saveError: null });
 
       try {
-        await templateService.ingestTemplate({
+        const response = await templateService.ingestTemplate({
           file: state.selectedFile,
           name: data.name,
           version: data.version,
           sepe_url: data.sepe_url,
+          comment: data.comment,
         });
 
         // Success: close modal and reset saving state
@@ -131,8 +135,13 @@ export const useAnalyzePageState = (): UseAnalyzePageState => {
           showSaveModal: false,
           saveError: null,
         });
+
+        // Call success callback with version_id for navigation
+        if (onSuccess && response.version_id) {
+          onSuccess(response.version_id);
+        }
       } catch (error) {
-        // Handle error
+        // Handle error - keep modal open for retry
         const errorMessage =
           error instanceof Error
             ? error.message

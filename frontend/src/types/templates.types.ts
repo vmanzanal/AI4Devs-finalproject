@@ -114,6 +114,74 @@ export interface VersionInfo {
   field_count: number;
 }
 
+/**
+ * Basic template information for version detail responses
+ * 
+ * Used when we need template context in version responses,
+ * such as success pages after template creation.
+ */
+export interface TemplateBasicInfo {
+  id: number;
+  name: string;
+  current_version: string;
+  comment: string | null;
+  uploaded_by: number | null;
+  created_at: string;
+}
+
+/**
+ * Detailed template version response with associated template info
+ * 
+ * Used for success pages and version detail views where we need
+ * both version and template information in one response.
+ * This minimizes API calls from the frontend.
+ */
+export interface TemplateVersionDetail {
+  // Version information
+  id: number;
+  version_number: string;
+  change_summary: string | null;
+  is_current: boolean;
+  created_at: string;
+  
+  // File information (version-specific)
+  file_path: string;
+  file_size_bytes: number;
+  field_count: number;
+  sepe_url: string | null;
+  
+  // PDF metadata
+  title: string | null;
+  author: string | null;
+  subject: string | null;
+  creation_date: string | null;
+  modification_date: string | null;
+  page_count: number;
+  
+  // Associated template
+  template: TemplateBasicInfo;
+}
+
+/**
+ * Template ingestion response
+ * 
+ * Returned after successfully ingesting a new template.
+ * Includes version_id to enable direct navigation to success page.
+ */
+export interface TemplateIngestResponse {
+  id: number;
+  name: string;
+  current_version: string;
+  comment: string | null;
+  file_path: string;
+  file_size_bytes: number;
+  field_count: number;
+  sepe_url: string | null;
+  checksum: string;
+  message: string;
+  version_id: number; // ID of the created version for navigation
+}
+
 // Filter and Sort Types
 export interface TemplatesFilters {
   name?: string;

@@ -26,10 +26,12 @@ export { useTheme } from './useTheme';
 // New template management hooks
 export { useTemplateFields } from './useTemplateFields';
 export { useTemplates } from './useTemplates';
+export { useTemplateVersion } from './useTemplateVersion';
 export { useTemplateVersions } from './useTemplateVersions';
 
 // Type exports for new hooks
 export type { UseTemplateFieldsReturn } from './useTemplateFields';
 export type { UseTemplatesReturn } from './useTemplates';
+export type { UseTemplateVersionReturn } from './useTemplateVersion';
 export type { UseTemplateVersionsReturn } from './useTemplateVersions';
 

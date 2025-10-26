@@ -38,6 +38,8 @@ from app.schemas.template import (
     TemplateUpdate,
     TemplateVersionResponse,
     TemplateVersionListResponse,
+    TemplateVersionDetailResponse,
+    TemplateBasicInfo,
     TemplateFieldResponse,
     TemplateFieldListResponse,
     VersionInfo,
@@ -158,6 +160,240 @@ def list_templates(
         total=total,
         limit=limit,
         offset=skip
+    )
+
+
+@router.get(
+    "/versions/{version_id}",
+    response_model=TemplateVersionDetailResponse,
+    summary="Get Template Version by ID",
+    description="""
+    Retrieve detailed information about a specific template version.
+    
+    This endpoint returns complete version metadata along with associated 
+    template information in a single response. It's designed for:
+    - Success pages after template creation
+    - Version detail views
+    - Any scenario requiring both version and template data together
+    
+    **Returns:**
+    - Complete version metadata (file info, PDF metadata)
+    - Associated template information (name, current version, etc.)
+    - All in one response to minimize API calls
+    
+    **Authentication Required:** Valid JWT token
+    
+    **Error Responses:**
+    - 404: Version not found or associated template not found
+    - 401: Not authenticated
+    - 403: Insufficient permissions (if authorization is enabled)
+    """,
+    tags=["Templates - Versions"],
+    responses={
+        200: {
+            "description": "Version details retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": 1,
+                        "version_number": "1.0",
+                        "change_summary": "Initial version",
+                        "is_current": True,
+                        "created_at": "2025-10-26T10:00:00Z",
+                        "file_path": "/app/uploads/abc-123.pdf",
+                        "file_size_bytes": 2621440,
+                        "field_count": 48,
+                        "sepe_url": "https://www.sepe.es/templates/solicitud",
+                        "title": "Solicitud de Prestación",
+                        "author": "SEPE",
+                        "subject": "Formulario de Solicitud",
+                        "creation_date": "2024-10-15T08:00:00Z",
+                        "modification_date": "2024-10-20T14:30:00Z",
+                        "page_count": 5,
+                        "template": {
+                            "id": 10,
+                            "name": "Solicitud Prestación Desempleo",
+                            "current_version": "1.0",
+                            "comment": "Formulario oficial SEPE 2024",
+                            "uploaded_by": 5,
+                            "created_at": "2025-10-26T09:45:00Z"
+                        }
+                    }
+                }
+            }
+        },
+        404: {"description": "Version not found"},
+        401: {"description": "Not authenticated"},
+    }
+)
+def get_version_by_id(
+    version_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Get detailed template version information by ID.
+    
+    Retrieves a specific template version with all its metadata and
+    associated template information. Uses eager loading to fetch
+    both version and template data in a single database query.
+    
+    Args:
+        version_id: Unique version identifier
+        current_user: Authenticated user from JWT token
+        db: Database session
+        
+    Returns:
+        TemplateVersionDetailResponse: Complete version data with template info
+        
+    Raises:
+        HTTPException 404: If version or associated template not found
+        HTTPException 403: If user lacks permission (optional, not implemented yet)
+    """
+    # Query version with its template relationship
+    version = db.query(TemplateVersion).filter(
+        TemplateVersion.id == version_id
+    ).first()
+    
+    if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Template version with ID {version_id} not found"
+        )
+    
+    # Get associated template
+    template = version.template
+    
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Associated template not found for this version"
+        )
+    
+    # Optional: Check permissions
+    # Uncomment if you want to restrict access to template owners only
+    # if template.uploaded_by and template.uploaded_by != current_user.id:
+    #     if not current_user.is_superuser:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_403_FORBIDDEN,
+    #             detail="Not enough permissions to view this version"
+    #         )
+    
+    # Build response with version and template data
+    return TemplateVersionDetailResponse(
+        # Version data
+        id=version.id,
+        version_number=version.version_number,
+        change_summary=version.change_summary,
+        is_current=version.is_current,
+        created_at=version.created_at,
+        # File information (version-specific)
+        file_path=version.file_path,
+        file_size_bytes=version.file_size_bytes,
+        field_count=version.field_count,
+        sepe_url=version.sepe_url,
+        # PDF metadata
+        title=version.title,
+        author=version.author,
+        subject=version.subject,
+        creation_date=version.creation_date,
+        modification_date=version.modification_date,
+        page_count=version.page_count,
+        # Template information
+        template=TemplateBasicInfo(
+            id=template.id,
+            name=template.name,
+            current_version=template.current_version,
+            comment=template.comment,
+            uploaded_by=template.uploaded_by,
+            created_at=template.created_at
+        )
+    )
+
+
+@router.get(
+    "/versions/{version_id}/download",
+    summary="Download Template Version PDF",
+    description="""
+    Download the PDF file for a specific template version.
+    
+    This endpoint allows downloading any version of a template, not just the current one.
+    Useful for:
+    - Success pages after template creation (download just-created version)
+    - Version history comparison
+    - Archival purposes
+    
+    **Authentication Required:** Valid JWT token
+    
+    **Response:** Binary PDF file with appropriate headers for download
+    
+    **Filename Format:** `{template_name}_v{version_number}.pdf`
+    
+    Special characters in filenames are sanitized for compatibility.
+    """,
+    tags=["Templates - Versions"],
+    response_class=FileResponse
+)
+def download_template_version(
+    version_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> FileResponse:
+    """
+    Download PDF file for a specific template version.
+    
+    Args:
+        version_id: Unique version identifier
+        current_user: Authenticated user
+        db: Database session
+        
+    Returns:
+        FileResponse: PDF file stream with download headers
+        
+    Raises:
+        HTTPException 404: If version or file not found
+        HTTPException 401: If not authenticated
+    """
+    # Get version
+    version = db.query(TemplateVersion).filter(
+        TemplateVersion.id == version_id
+    ).first()
+    
+    if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Template version with ID {version_id} not found"
+        )
+    
+    # Get template for filename
+    template = version.template
+    
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Associated template not found for this version"
+        )
+    
+    # Check if file exists
+    if not os.path.exists(version.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"PDF file not found at path: {version.file_path}"
+        )
+    
+    # Sanitize filename
+    safe_name = re.sub(r'[^\w\s-]', '', template.name).strip().replace(' ', '_')
+    safe_version = re.sub(r'[^\w.-]', '', version.version_number)
+    filename = f"{safe_name}_v{safe_version}.pdf"
+    
+    # Return file response with download headers
+    return FileResponse(
+        path=version.file_path,
+        media_type="application/pdf",
+        filename=filename,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
     )
 
 

@@ -18,6 +18,7 @@ import type {
   FieldsFilters,
   TemplateFieldListResponse,
   TemplateListResponse,
+  TemplateVersionDetail,
   TemplateVersionListResponse,
   VersionsFilters,
 } from '../../types/templates.types';
@@ -542,6 +543,142 @@ describe('TemplatesService - Template Fields', () => {
         // page_number should not be included since it wasn't provided
       }
     );
+  });
+});
+
+describe('TemplatesService - Get Version By ID', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const mockVersionDetail: TemplateVersionDetail = {
+    // Version information
+    id: 1,
+    version_number: '1.0',
+    change_summary: 'Initial version',
+    is_current: true,
+    created_at: '2025-10-26T10:00:00Z',
+    // File information
+    file_path: '/app/uploads/test-template.pdf',
+    file_size_bytes: 2621440,
+    field_count: 48,
+    sepe_url: 'https://www.sepe.es/templates/test',
+    // PDF metadata
+    title: 'Test Template',
+    author: 'SEPE',
+    subject: 'Test Subject',
+    creation_date: '2024-10-15T08:00:00Z',
+    modification_date: '2024-10-20T14:30:00Z',
+    page_count: 5,
+    // Associated template
+    template: {
+      id: 10,
+      name: 'Test Template Name',
+      current_version: '1.0',
+      comment: 'Test comment',
+      uploaded_by: 5,
+      created_at: '2025-10-26T09:45:00Z',
+    },
+  };
+
+  it('should fetch version detail by ID successfully', async () => {
+    vi.mocked(apiService.get).mockResolvedValue(mockVersionDetail);
+
+    const result = await templatesService.getVersionById(1);
+
+    expect(result).toEqual(mockVersionDetail);
+    expect(apiService.get).toHaveBeenCalledWith('/templates/versions/1');
+    expect(apiService.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('should return version with all required fields', async () => {
+    vi.mocked(apiService.get).mockResolvedValue(mockVersionDetail);
+
+    const result = await templatesService.getVersionById(1);
+
+    // Verify version data
+    expect(result.id).toBe(1);
+    expect(result.version_number).toBe('1.0');
+    expect(result.is_current).toBe(true);
+    expect(result.created_at).toBe('2025-10-26T10:00:00Z');
+
+    // Verify file information
+    expect(result.file_path).toBe('/app/uploads/test-template.pdf');
+    expect(result.file_size_bytes).toBe(2621440);
+    expect(result.field_count).toBe(48);
+    expect(result.sepe_url).toBe('https://www.sepe.es/templates/test');
+
+    // Verify PDF metadata
+    expect(result.title).toBe('Test Template');
+    expect(result.author).toBe('SEPE');
+    expect(result.page_count).toBe(5);
+
+    // Verify associated template
+    expect(result.template).toBeDefined();
+    expect(result.template.id).toBe(10);
+    expect(result.template.name).toBe('Test Template Name');
+    expect(result.template.current_version).toBe('1.0');
+  });
+
+  it('should handle version with null optional fields', async () => {
+    const versionWithNulls: TemplateVersionDetail = {
+      ...mockVersionDetail,
+      change_summary: null,
+      sepe_url: null,
+      title: null,
+      author: null,
+      subject: null,
+      creation_date: null,
+      modification_date: null,
+      template: {
+        ...mockVersionDetail.template,
+        comment: null,
+        uploaded_by: null,
+      },
+    };
+
+    vi.mocked(apiService.get).mockResolvedValue(versionWithNulls);
+
+    const result = await templatesService.getVersionById(1);
+
+    expect(result.change_summary).toBeNull();
+    expect(result.sepe_url).toBeNull();
+    expect(result.title).toBeNull();
+    expect(result.template.comment).toBeNull();
+    expect(result.template.uploaded_by).toBeNull();
+  });
+
+  it('should throw error when version not found', async () => {
+    const error = new Error('Version not found');
+    vi.mocked(apiService.get).mockRejectedValue(error);
+
+    await expect(templatesService.getVersionById(999)).rejects.toThrow(
+      'Version not found'
+    );
+    expect(apiService.get).toHaveBeenCalledWith('/templates/versions/999');
+  });
+
+  it('should handle API errors gracefully', async () => {
+    const apiError = new Error('API Error: 500 Internal Server Error');
+    vi.mocked(apiService.get).mockRejectedValue(apiError);
+
+    await expect(templatesService.getVersionById(1)).rejects.toThrow(
+      'API Error: 500 Internal Server Error'
+    );
+  });
+
+  it('should call correct endpoint for different version IDs', async () => {
+    vi.mocked(apiService.get).mockResolvedValue(mockVersionDetail);
+
+    await templatesService.getVersionById(42);
+    expect(apiService.get).toHaveBeenCalledWith('/templates/versions/42');
+
+    await templatesService.getVersionById(100);
+    expect(apiService.get).toHaveBeenCalledWith('/templates/versions/100');
   });
 });
 

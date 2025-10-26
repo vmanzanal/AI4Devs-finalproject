@@ -1,10 +1,10 @@
 import {
-  BarChart3,
-  FileText,
-  GitCompare,
-  Home,
-  Plus,
-  Upload
+    BarChart3,
+    FileText,
+    GitCompare,
+    Home,
+    Plus,
+    Upload
 } from 'lucide-react'
 import React from 'react'
 import { NavLink } from 'react-router-dom'
@@ -28,7 +28,7 @@ const Sidebar: React.FC = () => {
         },
         {
           label: 'Upload Template',
-          path: '/templates/upload',
+          path: '/analyze',
           icon: Upload,
         },
       ],

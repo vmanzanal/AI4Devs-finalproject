@@ -100,9 +100,11 @@ class TestIngestEndpoint:
             response_data = response.json()
             assert response_data["id"] == 1
             assert response_data["name"] == "Test Template"
-            assert response_data["version"] == "1.0"
+            assert response_data["current_version"] == "1.0"
             assert "checksum" in response_data
             assert "message" in response_data
+            assert "version_id" in response_data  # New field for navigation
+            assert isinstance(response_data["version_id"], int)
 
     def test_ingest_without_sepe_url(
         self,
