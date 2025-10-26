@@ -43,6 +43,8 @@ from app.schemas.template import (
     TemplateFieldResponse,
     TemplateFieldListResponse,
     VersionInfo,
+    TemplateNameItem,
+    TemplateNamesResponse,
 )
 from app.schemas.pdf_analysis import (
     TemplateField as TemplateFieldSchema,
@@ -160,6 +162,139 @@ def list_templates(
         total=total,
         limit=limit,
         offset=skip
+    )
+
+
+@router.get(
+    "/names",
+    response_model=TemplateNamesResponse,
+    summary="Get Template Names",
+    description="""
+    Retrieve a lightweight list of template names for UI selectors (dropdowns, autocomplete).
+    
+    This endpoint provides minimal template data optimized for:
+    - Version upload modal template selection
+    - Dropdown/combobox components
+    - Autocomplete/typeahead functionality
+    
+    **Features:**
+    - Returns only ID, name, and current version
+    - Case-insensitive search by template name
+    - Flexible sorting (by name or creation date)
+    - Pagination support (max 500 results)
+    
+    **Authentication Required:** Valid JWT token
+    
+    **Use Cases:**
+    - Populate template selector in version upload modal
+    - Quick template lookup by name
+    - Template reference in other forms
+    
+    **Performance:**
+    - Optimized query with minimal data
+    - Uses database indexes for fast searching
+    - Suitable for frequent requests (e.g., on every keystroke)
+    """,
+    tags=["Templates - CRUD"],
+    responses={
+        200: {
+            "description": "Template names retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "items": [
+                            {
+                                "id": 1,
+                                "name": "Solicitud Prestación Desempleo",
+                                "current_version": "2024-Q1"
+                            },
+                            {
+                                "id": 5,
+                                "name": "Modificación Datos Personales",
+                                "current_version": "v2.0"
+                            },
+                            {
+                                "id": 10,
+                                "name": "Certificado de Empresa",
+                                "current_version": "1.5"
+                            }
+                        ],
+                        "total": 3
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"},
+        422: {"description": "Validation error (invalid parameters)"},
+    }
+)
+def get_template_names(
+    search: Optional[str] = Query(None, description="Search by template name (case-insensitive)"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum number of results (1-500)"),
+    sort_by: str = Query("name", description="Sort field: 'name' or 'created_at'"),
+    sort_order: str = Query("asc", pattern="^(asc|desc)$", description="Sort order: 'asc' or 'desc'"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Get lightweight list of template names for UI selectors.
+    
+    Returns minimal template data (id, name, current_version) optimized for
+    dropdown and autocomplete components. Supports search and sorting.
+    
+    Args:
+        search: Optional search term for filtering by name (case-insensitive)
+        limit: Maximum number of results (1-500, default: 100)
+        sort_by: Field to sort by - 'name' or 'created_at' (default: name)
+        sort_order: Sort direction - 'asc' or 'desc' (default: asc)
+        current_user: Authenticated user from JWT token
+        db: Database session
+        
+    Returns:
+        TemplateNamesResponse: List of template name items with total count
+        
+    Raises:
+        HTTPException 401: If not authenticated
+        HTTPException 422: If validation error in query parameters
+    """
+    # Build query - select only necessary fields for performance
+    query = db.query(PDFTemplate)
+    
+    # Apply search filter if provided
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(PDFTemplate.name.ilike(search_term))
+    
+    # Validate and apply sorting
+    valid_sort_fields = ["name", "created_at"]
+    if sort_by not in valid_sort_fields:
+        sort_by = "name"
+    
+    sort_column = getattr(PDFTemplate, sort_by)
+    if sort_order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(asc(sort_column))
+    
+    # Get total count before pagination
+    total = query.count()
+    
+    # Apply limit (pagination)
+    templates = query.limit(limit).all()
+    
+    # Build lightweight response
+    items = [
+        TemplateNameItem(
+            id=template.id,
+            name=template.name,
+            current_version=template.current_version
+        )
+        for template in templates
+    ]
+    
+    return TemplateNamesResponse(
+        items=items,
+        total=total
     )
 
 

@@ -2,14 +2,18 @@
  * TemplateAnalyzePage - Main page component for PDF template analysis
  */
 
-import { ArrowLeft, Download, RefreshCw, Save } from "lucide-react";
-import React, { useCallback } from "react";
+import { ArrowLeft, Download, FileUp, RefreshCw, Save } from "lucide-react";
+import React, { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import FileUploadZone from "../../components/FileUploadZone/FileUploadZone";
 import TemplateFieldTable from "../../components/TemplateFieldTable/TemplateFieldTable";
 import TemplateSaveModal from "../../components/TemplateSaveModal/TemplateSaveModal";
+import type { VersionUploadFormData } from "../../components/VersionUploadModal";
+import VersionUploadModal from "../../components/VersionUploadModal/VersionUploadModal";
 import { useAnalyzePageState, useResponsiveBreakpoints } from "../../hooks/usePDFAnalysis";
+import { templatesService } from "../../services/templates.service";
 import type { TemplateAnalyzePageProps } from "../../types/pdfAnalysis";
+import type { TemplateNameItem } from "../../types/templates.types";
 
 /**
  * Progress bar component for upload progress
@@ -122,6 +126,7 @@ interface ActionButtonsProps {
   onAnalyzeAnother: () => void;
   onExportResults: () => void;
   onSaveTemplate: () => void;
+  onSaveVersion: () => void;
   onRetry: () => void;
   onChooseDifferentFile: () => void;
   hasResults: boolean;
@@ -132,34 +137,51 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
   onAnalyzeAnother,
   onExportResults,
   onSaveTemplate,
+  onSaveVersion,
   onRetry,
   onChooseDifferentFile,
   hasResults,
 }) => {
   if (uploadState === "success" && hasResults) {
     return (
-      <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
-        <button
-          onClick={onSaveTemplate}
-          className="flex items-center justify-center space-x-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors"
-        >
-          <Save className="h-4 w-4" />
-          <span>Guardar como Versión Inicial</span>
-        </button>
-        <button
-          onClick={onExportResults}
-          className="flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
-        >
-          <Download className="h-4 w-4" />
-          <span>Export Results</span>
-        </button>
-        <button
-          onClick={onAnalyzeAnother}
-          className="flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span>Analyze Another File</span>
-        </button>
+      <div className="flex flex-col gap-4 mt-6">
+        {/* Primary Actions Row */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <button
+            onClick={onSaveTemplate}
+            className="flex items-center justify-center space-x-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors"
+            data-testid="save-new-template-button"
+          >
+            <Save className="h-4 w-4" />
+            <span>Guardar Nuevo Template</span>
+          </button>
+          <button
+            onClick={onSaveVersion}
+            className="flex items-center justify-center space-x-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-colors"
+            data-testid="save-new-version-button"
+          >
+            <FileUp className="h-4 w-4" />
+            <span>Guardar Nueva Versión</span>
+          </button>
+        </div>
+        
+        {/* Secondary Actions Row */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <button
+            onClick={onExportResults}
+            className="flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+          >
+            <Download className="h-4 w-4" />
+            <span>Export Results</span>
+          </button>
+          <button
+            onClick={onAnalyzeAnother}
+            className="flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Analyze Another File</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -204,6 +226,11 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
     handleSaveTemplate,
   } = useAnalyzePageState();
   const breakpoints = useResponsiveBreakpoints();
+
+  // Version upload modal state
+  const [showVersionModal, setShowVersionModal] = useState(false);
+  const [versionUploadError, setVersionUploadError] = useState<string | null>(null);
+  const [isUploadingVersion, setIsUploadingVersion] = useState(false);
 
   const {
     uploadState,
@@ -269,6 +296,60 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
     handleReset();
   }, [handleReset]);
 
+  // Handle version modal open/close
+  const handleOpenVersionModal = useCallback(() => {
+    setShowVersionModal(true);
+    setVersionUploadError(null);
+  }, []);
+
+  const handleCloseVersionModal = useCallback(() => {
+    if (!isUploadingVersion) {
+      setShowVersionModal(false);
+      setVersionUploadError(null);
+    }
+  }, [isUploadingVersion]);
+
+  // Fetch template names for version modal selector
+  const fetchTemplateNames = useCallback(async (search?: string): Promise<TemplateNameItem[]> => {
+    try {
+      const response = await templatesService.getTemplateNames(search);
+      return response.items;
+    } catch (err) {
+      throw new Error(
+        err instanceof Error ? err.message : 'Failed to load templates'
+      );
+    }
+  }, []);
+
+  // Handle version upload submission
+  const handleSaveVersion = useCallback(
+    async (data: VersionUploadFormData) => {
+      if (!selectedFile) return;
+
+      setIsUploadingVersion(true);
+      setVersionUploadError(null);
+
+      try {
+        const response = await templatesService.ingestTemplateVersion({
+          template_id: data.template_id,
+          version: data.version,
+          change_summary: data.change_summary || undefined,
+          sepe_url: data.sepe_url || undefined,
+          file: selectedFile,
+        });
+
+        // Navigate to version detail page on success
+        navigate(`/templates/versions/${response.version_id}`);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to upload version';
+        setVersionUploadError(errorMessage);
+      } finally {
+        setIsUploadingVersion(false);
+      }
+    },
+    [selectedFile, navigate]
+  );
+
   const showResults = uploadState === "success" && analysisResults && analysisResults.length > 0;
   const isProcessing = uploadState === "uploading" || uploadState === "processing";
 
@@ -317,6 +398,7 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
             onAnalyzeAnother={handleReset}
             onExportResults={handleExportResults}
             onSaveTemplate={handleOpenSaveModal}
+            onSaveVersion={handleOpenVersionModal}
             onRetry={handleRetry}
             onChooseDifferentFile={handleChooseDifferentFile}
             hasResults={!!analysisResults && analysisResults.length > 0}
@@ -402,6 +484,19 @@ const TemplateAnalyzePage: React.FC<TemplateAnalyzePageProps> = ({ className = "
           file={selectedFile}
           isLoading={isSaving}
           error={saveError}
+        />
+      )}
+
+      {/* Version Upload Modal */}
+      {selectedFile && (
+        <VersionUploadModal
+          isOpen={showVersionModal}
+          onClose={handleCloseVersionModal}
+          onSave={handleSaveVersion}
+          file={selectedFile}
+          isLoading={isUploadingVersion}
+          error={versionUploadError}
+          fetchTemplateNames={fetchTemplateNames}
         />
       )}
     </div>

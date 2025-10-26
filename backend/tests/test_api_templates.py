@@ -1145,3 +1145,374 @@ class TestGetVersionById:
         
         # Template still shows current version 2.0
         assert data["template"]["current_version"] == "2.0"
+
+
+class TestTemplateNamesEndpoint:
+    """Test cases for GET /api/v1/templates/names endpoint."""
+    
+    @pytest.fixture
+    def test_user(self, db: Session) -> User:
+        """Create a test user."""
+        user = User(
+            email="names_test@example.com",
+            hashed_password=get_password_hash("testpassword123"),
+            full_name="Names Test User",
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+    
+    @pytest.fixture
+    def auth_headers(self, test_user: User) -> dict:
+        """Create authentication headers for test user."""
+        token = create_access_token(subject=str(test_user.id))
+        return {"Authorization": f"Bearer {token}"}
+    
+    def create_template_with_version(
+        self, 
+        db: Session, 
+        name: str, 
+        version: str, 
+        user_id: int
+    ) -> PDFTemplate:
+        """Helper to create a template with its current version."""
+        template = PDFTemplate(
+            name=name,
+            current_version=version,
+            uploaded_by=user_id
+        )
+        db.add(template)
+        db.flush()
+        
+        version_record = TemplateVersion(
+            template_id=template.id,
+            version_number=version,
+            file_path=f"/fake/path/{name.replace(' ', '_')}.pdf",
+            file_size_bytes=1024,
+            field_count=5,
+            is_current=True,
+            page_count=1
+        )
+        db.add(version_record)
+        db.commit()
+        db.refresh(template)
+        return template
+    
+    def test_get_template_names_empty(
+        self, 
+        client: TestClient, 
+        auth_headers: dict
+    ):
+        """Test getting template names when none exist."""
+        response = client.get(
+            "/api/v1/templates/names",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+    
+    def test_get_template_names_success(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test successfully getting template names."""
+        # Create test templates
+        template1 = self.create_template_with_version(
+            db, "Solicitud Prestación Desempleo", "2024-Q1", test_user.id
+        )
+        template2 = self.create_template_with_version(
+            db, "Modificación Datos Personales", "v2.0", test_user.id
+        )
+        template3 = self.create_template_with_version(
+            db, "Certificado de Empresa", "1.5", test_user.id
+        )
+        
+        response = client.get(
+            "/api/v1/templates/names",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 3
+        assert len(data["items"]) == 3
+        
+        # Verify structure of items
+        for item in data["items"]:
+            assert "id" in item
+            assert "name" in item
+            assert "current_version" in item
+        
+        # Verify specific templates are included
+        template_names = [item["name"] for item in data["items"]]
+        assert "Solicitud Prestación Desempleo" in template_names
+        assert "Modificación Datos Personales" in template_names
+        assert "Certificado de Empresa" in template_names
+    
+    def test_get_template_names_default_sorting(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test default sorting by name ascending."""
+        # Create templates in different order
+        self.create_template_with_version(db, "Zebra Template", "1.0", test_user.id)
+        self.create_template_with_version(db, "Alpha Template", "1.0", test_user.id)
+        self.create_template_with_version(db, "Beta Template", "1.0", test_user.id)
+        
+        response = client.get(
+            "/api/v1/templates/names",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Should be sorted alphabetically by name
+        names = [item["name"] for item in data["items"]]
+        assert names == ["Alpha Template", "Beta Template", "Zebra Template"]
+    
+    def test_get_template_names_sort_by_created_at(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test sorting by created_at."""
+        # Create templates in specific order
+        template1 = self.create_template_with_version(db, "First", "1.0", test_user.id)
+        template2 = self.create_template_with_version(db, "Second", "1.0", test_user.id)
+        template3 = self.create_template_with_version(db, "Third", "1.0", test_user.id)
+        
+        # Sort by created_at descending (newest first)
+        response = client.get(
+            "/api/v1/templates/names?sort_by=created_at&sort_order=desc",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        names = [item["name"] for item in data["items"]]
+        assert names == ["Third", "Second", "First"]
+        
+        # Sort by created_at ascending (oldest first)
+        response = client.get(
+            "/api/v1/templates/names?sort_by=created_at&sort_order=asc",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        names = [item["name"] for item in data["items"]]
+        assert names == ["First", "Second", "Third"]
+    
+    def test_get_template_names_search(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test search functionality."""
+        self.create_template_with_version(db, "Solicitud de Prestación", "1.0", test_user.id)
+        self.create_template_with_version(db, "Solicitud de Empleo", "1.0", test_user.id)
+        self.create_template_with_version(db, "Certificado Médico", "1.0", test_user.id)
+        self.create_template_with_version(db, "Modificación de Datos", "1.0", test_user.id)
+        
+        # Search for "Solicitud" (case-insensitive)
+        response = client.get(
+            "/api/v1/templates/names?search=solicitud",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        names = [item["name"] for item in data["items"]]
+        assert "Solicitud de Prestación" in names
+        assert "Solicitud de Empleo" in names
+        
+        # Search for "certificado" (case-insensitive)
+        response = client.get(
+            "/api/v1/templates/names?search=certificado",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["items"][0]["name"] == "Certificado Médico"
+        
+        # Search with no results
+        response = client.get(
+            "/api/v1/templates/names?search=nonexistent",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 0
+        assert data["items"] == []
+    
+    def test_get_template_names_pagination(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test pagination with limit parameter."""
+        # Create 10 templates
+        for i in range(10):
+            self.create_template_with_version(
+                db, f"Template {i:02d}", "1.0", test_user.id
+            )
+        
+        # Get first 5
+        response = client.get(
+            "/api/v1/templates/names?limit=5",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 5
+        assert data["total"] == 10
+        
+        # Get all with high limit
+        response = client.get(
+            "/api/v1/templates/names?limit=100",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 10
+        assert data["total"] == 10
+    
+    def test_get_template_names_limit_validation(
+        self, 
+        client: TestClient, 
+        auth_headers: dict
+    ):
+        """Test limit parameter validation."""
+        # Test limit below minimum (should use default or fail validation)
+        response = client.get(
+            "/api/v1/templates/names?limit=0",
+            headers=auth_headers
+        )
+        assert response.status_code == 422  # Validation error
+        
+        # Test limit above maximum
+        response = client.get(
+            "/api/v1/templates/names?limit=600",
+            headers=auth_headers
+        )
+        assert response.status_code == 422  # Validation error
+    
+    def test_get_template_names_sort_order_validation(
+        self, 
+        client: TestClient, 
+        auth_headers: dict
+    ):
+        """Test sort_order parameter validation."""
+        # Invalid sort order
+        response = client.get(
+            "/api/v1/templates/names?sort_order=invalid",
+            headers=auth_headers
+        )
+        assert response.status_code == 422  # Validation error
+    
+    def test_get_template_names_unauthorized(self, client: TestClient):
+        """Test accessing endpoint without authentication."""
+        response = client.get("/api/v1/templates/names")
+        
+        assert response.status_code == 401  # Unauthorized
+    
+    def test_get_template_names_combined_filters(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test combining search, limit, and sorting."""
+        # Create various templates
+        self.create_template_with_version(db, "SEPE Form A", "1.0", test_user.id)
+        self.create_template_with_version(db, "SEPE Form B", "1.0", test_user.id)
+        self.create_template_with_version(db, "SEPE Form C", "1.0", test_user.id)
+        self.create_template_with_version(db, "Other Template", "1.0", test_user.id)
+        
+        # Search for "SEPE", limit to 2, sort by name descending
+        response = client.get(
+            "/api/v1/templates/names?search=SEPE&limit=2&sort_by=name&sort_order=desc",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 3  # Total matching search
+        assert len(data["items"]) == 2  # Limited to 2
+        
+        # Should be sorted descending
+        names = [item["name"] for item in data["items"]]
+        assert names == ["SEPE Form C", "SEPE Form B"]
+    
+    def test_get_template_names_includes_current_version(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test that response includes current_version field."""
+        self.create_template_with_version(db, "Test Template", "2024-Q1", test_user.id)
+        
+        response = client.get(
+            "/api/v1/templates/names",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["current_version"] == "2024-Q1"
+    
+    def test_get_template_names_minimal_data(
+        self, 
+        client: TestClient, 
+        db: Session, 
+        auth_headers: dict, 
+        test_user: User
+    ):
+        """Test that response contains only minimal necessary data."""
+        self.create_template_with_version(db, "Test Template", "1.0", test_user.id)
+        
+        response = client.get(
+            "/api/v1/templates/names",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        item = data["items"][0]
+        
+        # Should only have these 3 fields
+        assert set(item.keys()) == {"id", "name", "current_version"}
+        
+        # Should NOT have heavy fields like file_path, field_count, etc.
+        assert "file_path" not in item
+        assert "file_size_bytes" not in item
+        assert "field_count" not in item
+        assert "uploaded_by" not in item

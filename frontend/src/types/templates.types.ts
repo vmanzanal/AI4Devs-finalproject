@@ -182,11 +182,69 @@ export interface TemplateIngestResponse {
   version_id: number; // ID of the created version for navigation
 }
 
+/**
+ * Template name item for selectors
+ * 
+ * Lightweight template data for dropdowns and autocomplete components.
+ * Used by the version upload modal to select existing templates.
+ */
+export interface TemplateNameItem {
+  id: number;
+  name: string;
+  current_version: string;
+}
+
+/**
+ * Template names response
+ * 
+ * Response from GET /api/v1/templates/names endpoint.
+ * Used to populate template selectors in the UI.
+ */
+export interface TemplateNamesResponse {
+  items: TemplateNameItem[];
+  total: number;
+}
+
+/**
+ * Template version ingestion request
+ * 
+ * Data required to create a new version of an existing template.
+ */
+export interface TemplateVersionIngestRequest {
+  template_id: number;
+  version: string;
+  change_summary?: string;
+  sepe_url?: string;
+  file: File;
+}
+
+/**
+ * Template version ingestion response
+ * 
+ * Returned after successfully ingesting a new template version.
+ * Includes version_id to enable direct navigation to version detail page.
+ */
+export interface TemplateVersionIngestResponse {
+  template_id: number;
+  version_id: number;
+  version_number: string;
+  change_summary: string | null;
+  file_path: string;
+  file_size_bytes: number;
+  field_count: number;
+  is_current: boolean;
+  message: string;
+}
+
 // Filter and Sort Types
 export interface TemplatesFilters {
   name?: string;
   current_version?: string;
   search?: string;
+  limit?: number;
+  offset?: number;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
 }
 
 export interface VersionsFilters {

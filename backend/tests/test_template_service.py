@@ -502,6 +502,7 @@ class TestTemplateService:
                 name="",
                 version="1.0",
                 sepe_url=None,
+                comment=None,
                 user_id=1
             )
         
@@ -512,6 +513,355 @@ class TestTemplateService:
                 name="Test",
                 version="",
                 sepe_url=None,
+                comment=None,
                 user_id=1
             )
+
+
+class TestTemplateVersionIngestion:
+    """Test cases for version ingestion workflow."""
+    
+    @pytest.fixture
+    def db_session(self):
+        """Create mock database session."""
+        session = Mock(spec=Session)
+        session.add = Mock()
+        session.flush = Mock()
+        session.commit = Mock()
+        session.rollback = Mock()
+        session.refresh = Mock()
+        session.bulk_save_objects = Mock()
+        session.query = Mock()
+        return session
+    
+    @pytest.fixture
+    def template_service(self, db_session):
+        """Create TemplateService instance."""
+        return TemplateService(db_session)
+    
+    @pytest.fixture
+    def existing_template(self):
+        """Mock existing template."""
+        template = Mock(spec=PDFTemplate)
+        template.id = 10
+        template.name = "Solicitud Prestación"
+        template.current_version = "2024-Q1"
+        return template
+    
+    @pytest.fixture
+    def existing_version(self):
+        """Mock existing version (currently is_current)."""
+        version = Mock(spec=TemplateVersion)
+        version.id = 5
+        version.template_id = 10
+        version.version_number = "2024-Q1"
+        version.is_current = True
+        return version
+    
+    @pytest.fixture
+    def mock_upload_file(self):
+        """Create mock UploadFile."""
+        sample_content = b"%PDF-1.4\ntest content"
+        mock_file = Mock(spec=UploadFile)
+        mock_file.filename = "test_v2.pdf"
+        mock_file.file = Mock()
+        mock_file.file.read = Mock(return_value=sample_content)
+        return mock_file
+    
+    @pytest.fixture
+    def mock_analysis_results(self):
+        """Mock PDF analysis results."""
+        return [
+            TemplateFieldData(
+                field_id="A0101",
+                type="text",
+                near_text="Campo actualizado",
+                value_options=None
+            ),
+            TemplateFieldData(
+                field_id="A0102",
+                type="text",
+                near_text="Nuevo campo añadido",
+                value_options=None
+            )
+        ]
+    
+    # Test: Template Validation
+    
+    @pytest.mark.asyncio
+    async def test_ingest_version_template_not_found(
+        self,
+        template_service,
+        db_session,
+        mock_upload_file
+    ):
+        """Test version ingestion fails when template doesn't exist."""
+        # Setup mock query to return None
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = None
+        db_session.query.return_value = mock_query
+        
+        # Execute and expect ValueError
+        with pytest.raises(ValueError, match="Template with ID 999 not found"):
+            await template_service.ingest_template_version(
+                file=mock_upload_file,
+                template_id=999,
+                version="2024-Q2",
+                change_summary="Updated fields",
+                sepe_url=None,
+                user_id=1
+            )
+    
+    # Test: Version Flag Updates (Critical!)
+    
+    @pytest.mark.asyncio
+    async def test_ingest_version_updates_is_current_flags(
+        self,
+        template_service,
+        db_session,
+        existing_template,
+        existing_version,
+        mock_upload_file,
+        mock_analysis_results
+    ):
+        """Test that existing versions are marked as not current."""
+        # Setup mocks
+        mock_query_template = Mock()
+        mock_query_template.filter.return_value.first.return_value = existing_template
+        
+        mock_query_versions = Mock()
+        mock_query_versions.filter.return_value.all.return_value = [
+            existing_version
+        ]
+        
+        # Configure query mock to return different results
+        def query_side_effect(model):
+            if model == PDFTemplate:
+                return mock_query_template
+            elif model == TemplateVersion:
+                return mock_query_versions
+            return Mock()
+        
+        db_session.query.side_effect = query_side_effect
+        
+        with patch.object(template_service, '_save_file') as mock_save:
+            with patch.object(template_service, '_extract_pdf_metadata') as mock_meta:
+                with patch.object(
+                    template_service.pdf_analysis_service,
+                    'analyze_pdf'
+                ) as mock_analyze:
+                    with patch.object(
+                        template_service.pdf_analysis_service,
+                        'get_page_count'
+                    ) as mock_count:
+                        # Setup return values
+                        mock_save.return_value = ("/app/test.pdf", 2048, "xyz789")
+                        mock_meta.return_value = {}
+                        mock_analyze.return_value = mock_analysis_results
+                        mock_count.return_value = 2
+                        
+                        # Execute
+                        result = await template_service.ingest_template_version(
+                            file=mock_upload_file,
+                            template_id=10,
+                            version="2024-Q2",
+                            change_summary="Updated fields",
+                            sepe_url=None,
+                            user_id=1
+                        )
+                        
+                        # Verify existing version was marked as not current
+                        assert existing_version.is_current is False
+                        
+                        # Verify new version was created
+                        assert db_session.add.called
+                        assert db_session.commit.called
+    
+    # Test: Complete Workflow
+    
+    @pytest.mark.asyncio
+    async def test_ingest_version_complete_workflow(
+        self,
+        template_service,
+        db_session,
+        existing_template,
+        mock_upload_file,
+        mock_analysis_results
+    ):
+        """Test complete version ingestion workflow."""
+        # Setup mocks
+        mock_query_template = Mock()
+        mock_query_template.filter.return_value.first.return_value = (
+            existing_template
+        )
+        
+        mock_query_versions = Mock()
+        mock_query_versions.filter.return_value.all.return_value = []
+        
+        def query_side_effect(model):
+            if model == PDFTemplate:
+                return mock_query_template
+            elif model == TemplateVersion:
+                return mock_query_versions
+            return Mock()
+        
+        db_session.query.side_effect = query_side_effect
+        
+        # Setup flush to assign IDs
+        def flush_side_effect():
+            if db_session.add.call_count > 0:
+                version_arg = db_session.add.call_args[0][0]
+                if isinstance(version_arg, TemplateVersion):
+                    version_arg.id = 100
+        
+        db_session.flush.side_effect = flush_side_effect
+        
+        with patch.object(template_service, '_save_file') as mock_save:
+            with patch.object(template_service, '_extract_pdf_metadata') as mock_meta:
+                with patch.object(
+                    template_service.pdf_analysis_service,
+                    'analyze_pdf'
+                ) as mock_analyze:
+                    with patch.object(
+                        template_service.pdf_analysis_service,
+                        'get_page_count'
+                    ) as mock_count:
+                        # Setup return values
+                        mock_save.return_value = ("/app/test.pdf", 2048, "xyz789")
+                        mock_meta.return_value = {
+                            "title": "Updated Form",
+                            "author": "SEPE",
+                            "subject": "V2",
+                            "creation_date": None,
+                            "modification_date": None
+                        }
+                        mock_analyze.return_value = mock_analysis_results
+                        mock_count.return_value = 2
+                        
+                        # Execute
+                        result = await template_service.ingest_template_version(
+                            file=mock_upload_file,
+                            template_id=10,
+                            version="2024-Q2",
+                            change_summary="Updated fields for new regulations",
+                            sepe_url="https://www.sepe.es/v2",
+                            user_id=1
+                        )
+                        
+                        # Verify result
+                        assert result.id == 100
+                        assert result.version_number == "2024-Q2"
+                        assert result.is_current is True
+                        assert result.template_id == 10
+                        
+                        # Verify all steps were called
+                        mock_save.assert_called_once()
+                        mock_meta.assert_called_once()
+                        mock_analyze.assert_called_once()
+                        mock_count.assert_called_once()
+                        
+                        # Verify database operations
+                        assert db_session.add.called
+                        assert db_session.bulk_save_objects.called
+                        assert db_session.commit.called
+                        
+                        # Verify template current_version was updated
+                        assert existing_template.current_version == "2024-Q2"
+    
+    # Test: Error Handling
+    
+    @pytest.mark.asyncio
+    async def test_ingest_version_rollback_on_db_error(
+        self,
+        template_service,
+        db_session,
+        existing_template,
+        mock_upload_file
+    ):
+        """Test transaction rollback when database error occurs."""
+        # Setup template query
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = existing_template
+        db_session.query.return_value = mock_query
+        
+        # Simulate database error on commit
+        db_session.commit.side_effect = SQLAlchemyError("Connection lost")
+        
+        with patch.object(template_service, '_save_file') as mock_save:
+            with patch.object(template_service, '_extract_pdf_metadata'):
+                with patch.object(
+                    template_service.pdf_analysis_service,
+                    'analyze_pdf'
+                ) as mock_analyze:
+                    with patch.object(
+                        template_service.pdf_analysis_service,
+                        'get_page_count'
+                    ):
+                        with patch('app.services.template_service.os.path.exists') as mock_exists:
+                            with patch('app.services.template_service.os.remove') as mock_remove:
+                                # Setup
+                                mock_save.return_value = ("/app/test.pdf", 1024, "abc")
+                                mock_analyze.return_value = []
+                                mock_exists.return_value = True
+                                
+                                # Execute and expect error
+                                with pytest.raises(
+                                    TemplateIngestionError,
+                                    match="Failed to persist"
+                                ):
+                                    await template_service.ingest_template_version(
+                                        file=mock_upload_file,
+                                        template_id=10,
+                                        version="2024-Q2",
+                                        change_summary="Test",
+                                        sepe_url=None,
+                                        user_id=1
+                                    )
+                                
+                                # Verify rollback and cleanup
+                                db_session.rollback.assert_called_once()
+                                mock_remove.assert_called()
+    
+    # Test: Field Cleanup on Failure
+    
+    @pytest.mark.asyncio
+    async def test_ingest_version_cleans_file_on_analysis_error(
+        self,
+        template_service,
+        db_session,
+        existing_template,
+        mock_upload_file
+    ):
+        """Test file is cleaned up when PDF analysis fails."""
+        # Setup template query
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = existing_template
+        db_session.query.return_value = mock_query
+        
+        with patch.object(template_service, '_save_file') as mock_save:
+            with patch.object(
+                template_service.pdf_analysis_service,
+                'analyze_pdf'
+            ) as mock_analyze:
+                with patch('app.services.template_service.os.path.exists') as mock_exists:
+                    with patch('app.services.template_service.os.remove') as mock_remove:
+                        # Setup
+                        temp_path = "/app/temp/test.pdf"
+                        mock_save.return_value = (temp_path, 1024, "abc")
+                        mock_analyze.side_effect = InvalidPDFError("Corrupted PDF")
+                        mock_exists.return_value = True
+                        
+                        # Execute and expect error
+                        with pytest.raises(InvalidPDFError):
+                            await template_service.ingest_template_version(
+                                file=mock_upload_file,
+                                template_id=10,
+                                version="2024-Q2",
+                                change_summary=None,
+                                sepe_url=None,
+                                user_id=1
+                            )
+                        
+                        # Verify file cleanup
+                        mock_remove.assert_called_with(temp_path)
 

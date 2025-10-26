@@ -495,3 +495,323 @@ class TemplateService:
                 f"Failed to create template records: {str(e)}"
             )
 
+    async def ingest_template_version(
+        self,
+        file: UploadFile,
+        template_id: int,
+        version: str,
+        change_summary: Optional[str],
+        sepe_url: Optional[str],
+        user_id: int
+    ) -> TemplateVersion:
+        """
+        Ingest a new version for an existing template.
+
+        This method creates a new version of an existing template by:
+        1. Validating the template exists
+        2. Saving the PDF file with checksum
+        3. Analyzing the PDF structure and fields
+        4. Updating version flags (marking old versions as not current)
+        5. Creating new version and field records transactionally
+        6. Updating the parent template's current_version
+
+        Args:
+            file: Uploaded PDF file
+            template_id: ID of existing template
+            version: Version identifier (1-50 characters)
+            change_summary: Optional description of changes
+            sepe_url: Optional SEPE source URL
+            user_id: ID of user performing the ingestion
+
+        Returns:
+            TemplateVersion: Created version with ID and all relationships
+
+        Raises:
+            ValueError: Template not found or invalid parameters
+            InvalidPDFError: PDF file is corrupted or invalid
+            NoFormFieldsError: PDF contains no form fields
+            TemplateIngestionError: Database or file system error
+        """
+        # Validate required fields
+        if not version or not version.strip():
+            raise ValueError("Template version is required and cannot be empty")
+        if len(version) > 50:
+            raise ValueError("Template version must be 50 characters or less")
+
+        file_path = None
+
+        try:
+            self.logger.info(
+                f"Version ingestion started: user={user_id}, "
+                f"template_id={template_id}, version={version}"
+            )
+
+            # Step 1: Validate template exists
+            template = self._validate_template_exists(template_id)
+            self.logger.debug(f"Template found: id={template.id}, name={template.name}")
+
+            # Step 2: Save file to persistent storage (REUSE)
+            file_path, file_size, checksum = self._save_file(file)
+            self.logger.info(
+                f"File saved: path={file_path}, size={file_size}, "
+                f"checksum={checksum}"
+            )
+
+            # Step 3: Extract PDF metadata (REUSE)
+            pdf_path = Path(file_path)
+            metadata = self._extract_pdf_metadata(pdf_path)
+            self.logger.debug(f"PDF metadata extracted: {metadata}")
+
+            # Step 4: Analyze PDF structure (REUSE)
+            analyzed_fields = self.pdf_analysis_service.analyze_pdf(pdf_path)
+            page_count = self.pdf_analysis_service.get_page_count(pdf_path)
+            self.logger.info(
+                f"PDF analysis complete: fields={len(analyzed_fields)}, "
+                f"pages={page_count}"
+            )
+
+            # Step 5: Create version records with atomic version flag updates
+            version_record = self._create_version_records(
+                template=template,
+                version=version.strip(),
+                file_path=file_path,
+                file_size=file_size,
+                checksum=checksum,
+                sepe_url=sepe_url,
+                change_summary=change_summary,
+                fields=analyzed_fields,
+                metadata=metadata,
+                page_count=page_count
+            )
+
+            self.logger.info(
+                f"Version ingestion complete: version_id={version_record.id}, "
+                f"template_id={template_id}"
+            )
+            return version_record
+
+        except (InvalidPDFError, NoFormFieldsError, ValueError):
+            # Clean up file on validation/processing errors
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    self.logger.info(f"Cleaned up file after error: {file_path}")
+                except Exception as cleanup_error:
+                    self.logger.error(f"Failed to clean up file: {cleanup_error}")
+            raise
+
+        except TemplateIngestionError:
+            # File cleanup already handled in _create_version_records
+            raise
+
+        except Exception as e:
+            # Clean up file on unexpected errors
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    self.logger.info(f"Cleaned up file after error: {file_path}")
+                except Exception as cleanup_error:
+                    self.logger.error(f"Failed to clean up file: {cleanup_error}")
+
+            self.logger.error(
+                f"Version ingestion failed: {str(e)}", exc_info=True
+            )
+            raise TemplateIngestionError(
+                f"Failed to ingest version: {str(e)}"
+            )
+
+    def _validate_template_exists(self, template_id: int) -> PDFTemplate:
+        """
+        Validate that a template exists.
+
+        Args:
+            template_id: Template ID to validate
+
+        Returns:
+            PDFTemplate: The template if found
+
+        Raises:
+            ValueError: If template not found
+        """
+        template = self.db.query(PDFTemplate).filter(
+            PDFTemplate.id == template_id
+        ).first()
+
+        if not template:
+            raise ValueError(f"Template with ID {template_id} not found")
+
+        return template
+
+    def _create_version_records(
+        self,
+        template: PDFTemplate,
+        version: str,
+        file_path: str,
+        file_size: int,
+        checksum: str,
+        sepe_url: Optional[str],
+        change_summary: Optional[str],
+        fields: List[TemplateFieldData],
+        metadata: Dict[str, Any],
+        page_count: int
+    ) -> TemplateVersion:
+        """
+        Create version and field records with atomic version flag updates.
+
+        This method performs critical version management:
+        1. Marks all existing versions as is_current=False
+        2. Creates new version with is_current=True
+        3. Updates parent template's current_version
+        4. Creates all field records
+        All in a single atomic transaction.
+
+        Args:
+            template: Parent template object
+            version: Version identifier
+            file_path: Absolute path to saved PDF file
+            file_size: File size in bytes
+            checksum: SHA256 checksum
+            sepe_url: Optional SEPE URL
+            change_summary: Optional change description
+            fields: List of analyzed field data
+            metadata: PDF document metadata
+            page_count: Number of pages in PDF
+
+        Returns:
+            TemplateVersion: Created version with ID
+
+        Raises:
+            TemplateIngestionError: Database transaction failed
+        """
+        try:
+            # CRITICAL: Mark all existing versions as not current
+            existing_versions = self.db.query(TemplateVersion).filter(
+                TemplateVersion.template_id == template.id
+            ).all()
+
+            for existing_version in existing_versions:
+                existing_version.is_current = False
+
+            self.logger.debug(
+                f"Marked {len(existing_versions)} existing versions as not current"
+            )
+
+            # Create new TemplateVersion record (marked as current)
+            new_version = TemplateVersion(
+                template_id=template.id,
+                version_number=version,
+                change_summary=change_summary,
+                is_current=True,  # New version is always current
+                # File information
+                file_path=file_path,
+                file_size_bytes=file_size,
+                field_count=len(fields),
+                sepe_url=sepe_url,
+                # PDF document metadata
+                title=metadata.get("title"),
+                author=metadata.get("author"),
+                subject=metadata.get("subject"),
+                creation_date=metadata.get("creation_date"),
+                modification_date=metadata.get("modification_date"),
+                page_count=page_count
+            )
+            self.db.add(new_version)
+            self.db.flush()  # Get version.id without committing
+            self.logger.debug(
+                f"Created TemplateVersion: id={new_version.id}, "
+                f"version_number={version}, is_current=True"
+            )
+
+            # Create TemplateField records (bulk insert)
+            template_fields = []
+            field_order_by_page = {}  # Track order within each page
+
+            for field_data in fields:
+                # Determine page number and order
+                page_number = 1  # Default to page 1
+                if page_number not in field_order_by_page:
+                    field_order_by_page[page_number] = 0
+                field_page_order = field_order_by_page[page_number]
+                field_order_by_page[page_number] += 1
+
+                template_field = TemplateField(
+                    version_id=new_version.id,
+                    field_id=field_data.field_id,
+                    field_type=field_data.type,
+                    raw_type=None,  # Not provided by current analysis
+                    page_number=page_number,
+                    field_page_order=field_page_order,
+                    near_text=field_data.near_text,
+                    value_options=field_data.value_options,
+                    position_data=None  # Not provided by current analysis
+                )
+                template_fields.append(template_field)
+
+            # Bulk insert all fields
+            self.db.bulk_save_objects(template_fields)
+            self.logger.debug(
+                f"Created {len(template_fields)} TemplateField records"
+            )
+
+            # Update parent template's current_version
+            template.current_version = version
+            self.logger.debug(
+                f"Updated template current_version to: {version}"
+            )
+
+            # Commit all changes atomically
+            self.db.commit()
+            self.db.refresh(new_version)
+
+            self.logger.info(
+                f"Version persist complete: version_id={new_version.id}, "
+                f"fields={len(template_fields)}, is_current=True"
+            )
+
+            return new_version
+
+        except SQLAlchemyError as e:
+            # Rollback transaction
+            self.db.rollback()
+            self.logger.error(
+                f"Database transaction failed: {str(e)}", exc_info=True
+            )
+
+            # Clean up uploaded file
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    self.logger.info(
+                        f"Cleaned up file after DB error: {file_path}"
+                    )
+                except Exception as cleanup_error:
+                    self.logger.error(
+                        f"Failed to clean up file after DB error: {cleanup_error}"
+                    )
+
+            raise TemplateIngestionError(
+                f"Failed to persist version data to database: {str(e)}"
+            )
+
+        except Exception as e:
+            # Rollback on unexpected errors
+            self.db.rollback()
+            self.logger.error(
+                f"Unexpected error during version creation: {str(e)}",
+                exc_info=True
+            )
+
+            # Clean up uploaded file
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    self.logger.info(f"Cleaned up file after error: {file_path}")
+                except Exception as cleanup_error:
+                    self.logger.error(
+                        f"Failed to clean up file: {cleanup_error}"
+                    )
+
+            raise TemplateIngestionError(
+                f"Failed to create version records: {str(e)}"
+            )
+

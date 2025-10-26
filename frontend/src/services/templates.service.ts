@@ -18,13 +18,16 @@
  */
 
 import type {
-    FieldsFilters,
-    TemplateFieldListResponse,
-    TemplateListResponse,
-    TemplatesFilters,
-    TemplateVersionDetail,
-    TemplateVersionListResponse,
-    VersionsFilters,
+  FieldsFilters,
+  TemplateFieldListResponse,
+  TemplateListResponse,
+  TemplateNamesResponse,
+  TemplatesFilters,
+  TemplateVersionDetail,
+  TemplateVersionIngestRequest,
+  TemplateVersionIngestResponse,
+  TemplateVersionListResponse,
+  VersionsFilters,
 } from '../types/templates.types';
 import { apiService } from './apiService';
 
@@ -329,6 +332,95 @@ class TemplatesService {
     return apiService.get<TemplateFieldListResponse>(
       `/templates/${templateId}/versions/${versionId}/fields`,
       params
+    );
+  }
+
+  /**
+   * Fetch template names for UI selectors (dropdowns, autocomplete)
+   *
+   * Returns a lightweight list of templates with just ID, name, and
+   * current_version. Optimized for use in form selectors and autocomplete
+   * components.
+   *
+   * @param search - Optional search term to filter by template name
+   * @param limit - Maximum number of results (default 100, max 500)
+   * @param sortBy - Sort field: 'name' or 'created_at' (default 'name')
+   * @param sortOrder - Sort order: 'asc' or 'desc' (default 'asc')
+   * @returns Promise resolving to list of template names
+   * @throws Error if API request fails
+   *
+   * @example
+   * ```typescript
+   * // Fetch all template names
+   * const names = await templatesService.getTemplateNames();
+   *
+   * // Search for specific templates
+   * const names = await templatesService.getTemplateNames('SEPE', 50);
+   * ```
+   */
+  async getTemplateNames(
+    search?: string,
+    limit: number = 100,
+    sortBy: 'name' | 'created_at' = 'name',
+    sortOrder: 'asc' | 'desc' = 'asc'
+  ): Promise<TemplateNamesResponse> {
+    const params = {
+      limit,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+      ...(search && { search }),
+    };
+
+    return apiService.get<TemplateNamesResponse>('/templates/names', params);
+  }
+
+  /**
+   * Ingest a new version of an existing template
+   *
+   * Creates a new version record by:
+   * 1. Uploading and analyzing the PDF file
+   * 2. Extracting AcroForm fields
+   * 3. Marking the new version as current
+   * 4. Updating version history
+   *
+   * @param request - Version ingestion request data
+   * @returns Promise resolving to ingestion response with version_id
+   * @throws Error if template not found, file invalid, or ingestion fails
+   *
+   * @example
+   * ```typescript
+   * const response = await templatesService.ingestTemplateVersion({
+   *   template_id: 10,
+   *   version: '2024-Q2',
+   *   change_summary: 'Updated fields for new regulations',
+   *   sepe_url: 'https://www.sepe.es/formulario-v2',
+   *   file: pdfFile
+   * });
+   *
+   * // Navigate to version detail page
+   * navigate(`/templates/versions/${response.version_id}`);
+   * ```
+   */
+  async ingestTemplateVersion(
+    request: TemplateVersionIngestRequest
+  ): Promise<TemplateVersionIngestResponse> {
+    // Create FormData for multipart upload
+    const formData = new FormData();
+    formData.append('file', request.file);
+    formData.append('template_id', request.template_id.toString());
+    formData.append('version', request.version);
+
+    if (request.change_summary) {
+      formData.append('change_summary', request.change_summary);
+    }
+
+    if (request.sepe_url) {
+      formData.append('sepe_url', request.sepe_url);
+    }
+
+    return apiService.upload<TemplateVersionIngestResponse>(
+      '/templates/ingest/version',
+      formData
     );
   }
 }

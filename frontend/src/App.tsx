@@ -47,6 +47,7 @@ function App() {
                 <Route path="templates" element={<TemplatesPage />} />
                 <Route path="templates/upload" element={<TemplateUploadPage />} />
                 <Route path="templates/created/:versionId" element={<TemplateCreatedPage />} />
+                <Route path="templates/versions/:versionId" element={<TemplateCreatedPage />} />
                 <Route path="templates/:id" element={<TemplateDetailsPage />} />
                 
                 {/* Comparisons */}

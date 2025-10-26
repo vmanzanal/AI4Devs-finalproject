@@ -306,3 +306,87 @@ class TemplateVersionDetailResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Template Names Schemas (for version ingestion modal)
+
+
+class TemplateNameItem(BaseModel):
+    """
+    Lightweight template item for selectors/dropdowns.
+    
+    Used in version upload modal to select existing templates.
+    """
+    
+    id: int
+    name: str
+    current_version: str
+    
+    class Config:
+        from_attributes = True
+
+
+class TemplateNamesResponse(BaseModel):
+    """
+    Response schema for template names endpoint.
+    
+    Returns minimal template data for efficient dropdown/selector population.
+    """
+    
+    items: List[TemplateNameItem]
+    total: int
+
+
+# Version Ingestion Schemas
+
+
+class TemplateVersionIngestRequest(BaseModel):
+    """
+    Schema for version ingestion request.
+    
+    Used when uploading a new version of an existing template.
+    """
+    
+    template_id: int = Field(..., gt=0, description="Existing template ID")
+    version: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="Version identifier"
+    )
+    change_summary: Optional[str] = Field(
+        None,
+        description="Description of changes in this version"
+    )
+    sepe_url: Optional[HttpUrl] = Field(
+        None,
+        description="SEPE source URL"
+    )
+    
+    @field_validator("version")
+    @classmethod
+    def validate_version(cls, v: str) -> str:
+        """Validate version is not empty after stripping."""
+        if not v or not v.strip():
+            raise ValueError("Version cannot be empty")
+        return v.strip()
+
+
+class TemplateVersionIngestResponse(BaseModel):
+    """
+    Schema for version ingestion response.
+    
+    Returns the created version details for navigation to success page.
+    """
+    
+    template_id: int
+    version_id: int = Field(
+        ..., description="New version ID for navigation"
+    )
+    version_number: str
+    change_summary: Optional[str] = None
+    file_path: str
+    file_size_bytes: int
+    field_count: int
+    is_current: bool = True
+    message: str = "Version ingested successfully"
