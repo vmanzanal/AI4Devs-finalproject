@@ -104,14 +104,19 @@ def list_templates(
     Returns:
         TemplateListResponse: Paginated list with items, total count, and pagination info
     """
-    query = db.query(PDFTemplate)
+    # Join with current version to get file data
+    query = db.query(PDFTemplate).outerjoin(
+        TemplateVersion,
+        (TemplateVersion.template_id == PDFTemplate.id) &
+        (TemplateVersion.is_current == True)
+    )
     
     # Apply search filter
     if search:
         search_term = f"%{search}%"
         query = query.filter(
             PDFTemplate.name.ilike(search_term) |
-            PDFTemplate.version.ilike(search_term)
+            PDFTemplate.current_version.ilike(search_term)
         )
     
     # Apply sorting
@@ -130,17 +135,22 @@ def list_templates(
     # Convert to response format
     template_responses = []
     for template in templates:
+        # Get current version data
+        current_version = template.current_version_record
+        
         template_responses.append(TemplateResponse(
             id=template.id,
             name=template.name,
-            version=template.version,
-            file_path=template.file_path,
-            file_size_bytes=template.file_size_bytes,
-            field_count=template.field_count,
-            sepe_url=template.sepe_url,
+            current_version=template.current_version,
+            comment=template.comment,
             uploaded_by=template.uploaded_by,
             created_at=template.created_at,
-            updated_at=template.updated_at
+            updated_at=template.updated_at,
+            # From current version
+            file_path=current_version.file_path if current_version else None,
+            file_size_bytes=current_version.file_size_bytes if current_version else None,
+            field_count=current_version.field_count if current_version else None,
+            sepe_url=current_version.sepe_url if current_version else None
         ))
     
     return TemplateListResponse(
@@ -185,17 +195,22 @@ def get_template(
             detail="Template not found"
         )
     
+    # Get current version data
+    current_version = template.current_version_record
+    
     return TemplateResponse(
         id=template.id,
         name=template.name,
-        version=template.version,
-        file_path=template.file_path,
-        file_size_bytes=template.file_size_bytes,
-        field_count=template.field_count,
-        sepe_url=template.sepe_url,
+        current_version=template.current_version,
+        comment=template.comment,
         uploaded_by=template.uploaded_by,
         created_at=template.created_at,
-        updated_at=template.updated_at
+        updated_at=template.updated_at,
+        # From current version
+        file_path=current_version.file_path if current_version else None,
+        file_size_bytes=current_version.file_size_bytes if current_version else None,
+        field_count=current_version.field_count if current_version else None,
+        sepe_url=current_version.sepe_url if current_version else None
     )
 
 
@@ -255,7 +270,7 @@ def update_template(
             detail="Not enough permissions to update this template"
         )
     
-    # Update fields
+    # Update fields (only template-level fields, not version-specific ones)
     update_data = template_data.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(template, field, value)
@@ -263,17 +278,22 @@ def update_template(
     db.commit()
     db.refresh(template)
     
+    # Get current version data for response
+    current_version = template.current_version_record
+    
     return TemplateResponse(
         id=template.id,
         name=template.name,
-        version=template.version,
-        file_path=template.file_path,
-        file_size_bytes=template.file_size_bytes,
-        field_count=template.field_count,
-        sepe_url=template.sepe_url,
+        current_version=template.current_version,
+        comment=template.comment,
         uploaded_by=template.uploaded_by,
         created_at=template.created_at,
-        updated_at=template.updated_at
+        updated_at=template.updated_at,
+        # From current version
+        file_path=current_version.file_path if current_version else None,
+        file_size_bytes=current_version.file_size_bytes if current_version else None,
+        field_count=current_version.field_count if current_version else None,
+        sepe_url=current_version.sepe_url if current_version else None
     )
 
 
@@ -330,11 +350,12 @@ def delete_template(
         )
     
     try:
-        # Delete file from filesystem
-        if os.path.exists(template.file_path):
-            os.remove(template.file_path)
+        # Delete all version files from filesystem
+        for version in template.versions:
+            if version.file_path and os.path.exists(version.file_path):
+                os.remove(version.file_path)
         
-        # Delete database record
+        # Delete database record (cascade will delete versions and fields)
         db.delete(template)
         db.commit()
         
@@ -394,8 +415,17 @@ def download_template(
             detail="Template not found"
         )
     
+    # Get current version to access file_path
+    current_version = template.current_version_record
+    
+    if not current_version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template has no current version"
+        )
+    
     # Check if file exists
-    if not os.path.exists(template.file_path):
+    if not os.path.exists(current_version.file_path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="PDF file not found on disk"
@@ -405,11 +435,11 @@ def download_template(
     # Replace spaces with underscores and remove special characters
     safe_name = re.sub(r'[^\w\s-]', '', template.name)
     safe_name = re.sub(r'[\s]+', '_', safe_name)
-    safe_version = re.sub(r'[^\w.-]', '', template.version)
+    safe_version = re.sub(r'[^\w.-]', '', template.current_version)
     filename = f"{safe_name}_v{safe_version}.pdf"
     
     return FileResponse(
-        path=template.file_path,
+        path=current_version.file_path,
         media_type="application/pdf",
         filename=filename,
         headers={
@@ -503,6 +533,12 @@ def get_template_versions(
                 change_summary=version.change_summary,
                 is_current=version.is_current,
                 created_at=version.created_at,
+                # File information (version-specific)
+                file_path=version.file_path,
+                file_size_bytes=version.file_size_bytes,
+                field_count=version.field_count,
+                sepe_url=version.sepe_url,
+                # PDF metadata
                 title=version.title,
                 author=version.author,
                 subject=version.subject,

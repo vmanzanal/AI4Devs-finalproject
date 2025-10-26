@@ -8,40 +8,57 @@ from pydantic import BaseModel, Field, field_validator, HttpUrl
 
 
 class TemplateBase(BaseModel):
-    """Base template schema."""
+    """Base template schema with refactored structure."""
+
     name: str = Field(..., max_length=255)
-    version: str = Field(..., max_length=50)
-    sepe_url: Optional[str] = Field(None, max_length=1000)
+    current_version: str = Field(..., max_length=50)
+    comment: Optional[str] = Field(
+        None, description="Optional comment about the template"
+    )
 
 
 class TemplateCreate(TemplateBase):
     """Schema for template creation."""
+
     pass
 
 
 class TemplateUpdate(BaseModel):
     """Schema for template update."""
+
     name: Optional[str] = Field(None, max_length=255)
-    version: Optional[str] = Field(None, max_length=50)
-    sepe_url: Optional[str] = Field(None, max_length=1000)
+    current_version: Optional[str] = Field(None, max_length=50)
+    comment: Optional[str] = Field(
+        None, description="Optional comment about the template"
+    )
 
 
 class TemplateResponse(TemplateBase):
-    """Schema for template response."""
+    """
+    Schema for template response.
+
+    Note: file_path, file_size_bytes, field_count, and sepe_url are now
+    fetched from the current version relationship, not directly from the template.
+    """
+
     id: int
-    file_path: str
-    file_size_bytes: int
-    field_count: int
     uploaded_by: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
+
+    # These fields come from the current version relationship
+    file_path: Optional[str] = Field(None, description="From current version")
+    file_size_bytes: Optional[int] = Field(None, description="From current version")
+    field_count: Optional[int] = Field(None, description="From current version")
+    sepe_url: Optional[str] = Field(None, description="From current version")
+
     class Config:
         from_attributes = True
 
 
 class TemplateListResponse(BaseModel):
     """Schema for template list response."""
+
     items: List[TemplateResponse]
     total: int
     limit: int
@@ -49,13 +66,26 @@ class TemplateListResponse(BaseModel):
 
 
 class TemplateVersionResponse(BaseModel):
-    """Schema for template version response with full metadata."""
+    """
+    Schema for template version response with full metadata.
+
+    Includes file information (file_path, file_size_bytes, field_count, sepe_url)
+    as these are now stored at the version level for atomicity.
+    """
+
     id: int
     template_id: int
     version_number: str
     change_summary: Optional[str] = None
     is_current: bool
     created_at: datetime
+
+    # File Information (version-specific)
+    file_path: str
+    file_size_bytes: int
+    field_count: int
+    sepe_url: Optional[str] = None
+
     # PDF Document Metadata
     title: Optional[str] = None
     author: Optional[str] = None
@@ -63,13 +93,14 @@ class TemplateVersionResponse(BaseModel):
     creation_date: Optional[datetime] = None
     modification_date: Optional[datetime] = None
     page_count: int
-    
+
     class Config:
         from_attributes = True
 
 
 class TemplateVersionListResponse(BaseModel):
     """Schema for paginated template version list response."""
+
     items: List[TemplateVersionResponse]
     total: int
     limit: int
@@ -78,6 +109,7 @@ class TemplateVersionListResponse(BaseModel):
 
 class TemplateFieldResponse(BaseModel):
     """Schema for template field response."""
+
     id: int
     version_id: int
     field_id: str
@@ -89,13 +121,14 @@ class TemplateFieldResponse(BaseModel):
     value_options: Optional[List[str]] = None
     position_data: Optional[Dict[str, Any]] = None
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
 
 class VersionInfo(BaseModel):
     """Schema for version metadata included in fields response."""
+
     version_id: int
     version_number: str
     field_count: int
@@ -103,6 +136,7 @@ class VersionInfo(BaseModel):
 
 class TemplateFieldListResponse(BaseModel):
     """Schema for paginated template field list response."""
+
     items: List[TemplateFieldResponse]
     total: int
     limit: int
@@ -111,97 +145,99 @@ class TemplateFieldListResponse(BaseModel):
 
 
 class TemplateUploadResponse(BaseModel):
-    """Schema for template upload response."""
+    """
+    Schema for template upload response.
+
+    Returns template information along with current version data.
+    """
+
     id: int
     name: str
-    version: str
-    file_path: str
-    file_size_bytes: int
-    field_count: int
+    current_version: str
+    comment: Optional[str] = None
+    file_path: str  # From current version
+    file_size_bytes: int  # From current version
+    field_count: int  # From current version
+    sepe_url: Optional[str] = None  # From current version
     message: str = "Template uploaded successfully"
 
 
 # Template Ingestion Schemas
 
+
 class TemplateIngestRequest(BaseModel):
     """Schema for template ingestion request."""
-    
-    name: str = Field(
-        ...,
-        min_length=1,
-        max_length=255,
-        description="Template name"
-    )
+
+    name: str = Field(..., min_length=1, max_length=255, description="Template name")
     version: str = Field(
         ...,
         min_length=1,
         max_length=50,
-        description="Version identifier"
+        description="Version identifier (will be set as current_version)",
     )
     sepe_url: Optional[HttpUrl] = Field(
-        None,
-        description="SEPE source URL"
+        None, description="SEPE source URL (stored in template version)"
+    )
+    comment: Optional[str] = Field(
+        None, description="Optional comment about the template"
     )
 
-    @field_validator('name')
+    @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
         """Validate name is not empty after stripping."""
         if not v or not v.strip():
-            raise ValueError('Template name cannot be empty')
+            raise ValueError("Template name cannot be empty")
         return v.strip()
 
-    @field_validator('version')
+    @field_validator("version")
     @classmethod
     def validate_version(cls, v: str) -> str:
         """Validate version is not empty after stripping."""
         if not v or not v.strip():
-            raise ValueError('Template version cannot be empty')
+            raise ValueError("Template version cannot be empty")
         return v.strip()
 
 
 class TemplateIngestResponse(BaseModel):
-    """Schema for template ingestion response."""
-    
+    """
+    Schema for template ingestion response.
+
+    Returns template information with current version data.
+    """
+
     id: int
     name: str
-    version: str
-    file_path: str
-    file_size_bytes: int = Field(..., gt=0, description="File size in bytes")
-    field_count: int = Field(..., ge=0, description="Number of fields extracted")
+    current_version: str
+    comment: Optional[str] = None
+    file_path: str  # From current version
+    file_size_bytes: int = Field(
+        ..., gt=0, description="File size in bytes (from version)"
+    )
+    field_count: int = Field(
+        ..., ge=0, description="Number of fields extracted (from version)"
+    )
+    sepe_url: Optional[str] = None  # From current version
     checksum: str = Field(..., description="SHA256 checksum of file")
     message: str = "Template ingested successfully"
 
 
 class TemplateFieldData(BaseModel):
     """Schema for template field data matching database structure."""
-    
+
     field_id: str = Field(..., max_length=255, description="Field identifier")
     field_type: str = Field(..., max_length=50, description="Field type")
     raw_type: Optional[str] = Field(
-        None,
-        max_length=50,
-        description="Raw PDF field type"
+        None, max_length=50, description="Raw PDF field type"
     )
-    page_number: int = Field(
-        ...,
-        ge=1,
-        description="Page number (1-indexed)"
-    )
+    page_number: int = Field(..., ge=1, description="Page number (1-indexed)")
     field_page_order: int = Field(
-        ...,
-        ge=0,
-        description="Order within page (0-indexed)"
+        ..., ge=0, description="Order within page (0-indexed)"
     )
-    near_text: Optional[str] = Field(
-        None,
-        description="Nearby text label"
-    )
+    near_text: Optional[str] = Field(None, description="Nearby text label")
     value_options: Optional[List[str]] = Field(
-        None,
-        description="Available options for selection fields"
+        None, description="Available options for selection fields"
     )
     position_data: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Field position coordinates"
+        None, description="Field position coordinates"
     )

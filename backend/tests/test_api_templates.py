@@ -37,6 +37,39 @@ class TestTemplateEndpoints:
         token = create_access_token(subject=str(test_user.id))
         return {"Authorization": f"Bearer {token}"}
     
+    def create_template_with_version(
+        self, 
+        db: Session, 
+        name: str, 
+        version: str, 
+        user_id: int,
+        file_path: str = None,
+        file_size_bytes: int = 1024,
+        field_count: int = 5
+    ) -> PDFTemplate:
+        """Helper to create a template with its current version."""
+        template = PDFTemplate(
+            name=name,
+            current_version=version,
+            uploaded_by=user_id
+        )
+        db.add(template)
+        db.flush()  # Get template.id
+        
+        version_record = TemplateVersion(
+            template_id=template.id,
+            version_number=version,
+            file_path=file_path or f"/fake/path/{name.replace(' ', '_')}.pdf",
+            file_size_bytes=file_size_bytes,
+            field_count=field_count,
+            is_current=True,
+            page_count=1
+        )
+        db.add(version_record)
+        db.commit()
+        db.refresh(template)
+        return template
+    
     def test_list_templates_empty(self, client: TestClient):
         """Test listing templates when none exist."""
         response = client.get("/api/v1/templates/")
@@ -50,25 +83,42 @@ class TestTemplateEndpoints:
     
     def test_list_templates_with_data(self, client: TestClient, db: Session, test_user: User):
         """Test listing templates with existing data."""
-        # Create test templates
+        # Create test templates with current versions
         template1 = PDFTemplate(
             name="Template 1",
-            version="1.0",
-            file_path="/fake/path/template1.pdf",
-            file_size_bytes=1024,
-            field_count=5,
+            current_version="1.0",
             uploaded_by=test_user.id
         )
         template2 = PDFTemplate(
             name="Template 2",
-            version="2.0",
-            file_path="/fake/path/template2.pdf",
-            file_size_bytes=2048,
-            field_count=10,
+            current_version="2.0",
             uploaded_by=test_user.id
         )
         
         db.add_all([template1, template2])
+        db.commit()
+        
+        # Create current versions
+        version1 = TemplateVersion(
+            template_id=template1.id,
+            version_number="1.0",
+            file_path="/fake/path/template1.pdf",
+            file_size_bytes=1024,
+            field_count=5,
+            is_current=True,
+            page_count=1
+        )
+        version2 = TemplateVersion(
+            template_id=template2.id,
+            version_number="2.0",
+            file_path="/fake/path/template2.pdf",
+            file_size_bytes=2048,
+            field_count=10,
+            is_current=True,
+            page_count=1
+        )
+        
+        db.add_all([version1, version2])
         db.commit()
         
         response = client.get("/api/v1/templates/")
@@ -85,21 +135,11 @@ class TestTemplateEndpoints:
     
     def test_list_templates_pagination(self, client: TestClient, db: Session, test_user: User):
         """Test template list pagination."""
-        # Create multiple templates
-        templates = []
+        # Create multiple templates with versions
         for i in range(15):
-            template = PDFTemplate(
-                name=f"Template {i}",
-                version="1.0",
-                file_path=f"/fake/path/template{i}.pdf",
-                file_size_bytes=1024,
-                field_count=5,
-                uploaded_by=test_user.id
+            self.create_template_with_version(
+                db, f"Template {i}", "1.0", test_user.id
             )
-            templates.append(template)
-        
-        db.add_all(templates)
-        db.commit()
         
         # Test first page
         response = client.get("/api/v1/templates/?limit=10&skip=0")
@@ -117,26 +157,9 @@ class TestTemplateEndpoints:
     
     def test_list_templates_search(self, client: TestClient, db: Session, test_user: User):
         """Test template search functionality."""
-        # Create test templates
-        template1 = PDFTemplate(
-            name="Employment Form",
-            version="1.0",
-            file_path="/fake/path/employment.pdf",
-            file_size_bytes=1024,
-            field_count=5,
-            uploaded_by=test_user.id
-        )
-        template2 = PDFTemplate(
-            name="Unemployment Benefit",
-            version="1.0",
-            file_path="/fake/path/benefit.pdf",
-            file_size_bytes=2048,
-            field_count=10,
-            uploaded_by=test_user.id
-        )
-        
-        db.add_all([template1, template2])
-        db.commit()
+        # Create test templates with versions
+        self.create_template_with_version(db, "Employment Form", "1.0", test_user.id)
+        self.create_template_with_version(db, "Unemployment Benefit", "1.0", test_user.id)
         
         # Search for "employment"
         response = client.get("/api/v1/templates/?search=employment")

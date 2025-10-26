@@ -14,7 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Boolean,
     Text,
-    JSON
+    JSON,
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -23,66 +23,93 @@ from app.core.database import Base
 
 
 class PDFTemplate(Base):
-    """PDF template model for template metadata and file information."""
+    """
+    PDF template model for template metadata.
+
+    This model stores base template information. Version-specific data
+    (file path, size, field count, etc.) is stored in TemplateVersion.
+    """
 
     __tablename__ = "pdf_templates"
 
+    # Primary Key
     id = Column(Integer, primary_key=True, index=True)
+
+    # Template Information
     name = Column(String(255), nullable=False, index=True)
-    version = Column(String(50), nullable=False, index=True)
-    file_path = Column(String(500), nullable=False)
-    file_size_bytes = Column(Integer, nullable=False)
-    field_count = Column(Integer, default=0)
-    sepe_url = Column(String(1000), nullable=True)
+    current_version = Column(String(50), nullable=False, index=True)
+    comment = Column(Text, nullable=True)
+
+    # Ownership and Timestamps
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        index=True
-    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
     uploader = relationship("User", back_populates="uploaded_templates")
     versions = relationship(
-        "TemplateVersion",
-        back_populates="template",
-        cascade="all, delete-orphan"
+        "TemplateVersion", back_populates="template", cascade="all, delete-orphan"
     )
     source_comparisons = relationship(
         "Comparison",
         foreign_keys="Comparison.source_template_id",
-        back_populates="source_template"
+        back_populates="source_template",
     )
     target_comparisons = relationship(
         "Comparison",
         foreign_keys="Comparison.target_template_id",
-        back_populates="target_template"
+        back_populates="target_template",
     )
 
     def __repr__(self) -> str:
         return (
             f"<PDFTemplate(id={self.id}, name='{self.name}', "
-            f"version='{self.version}')>"
+            f"current_version='{self.current_version}')>"
         )
+
+    @property
+    def current_version_record(self):
+        """
+        Get the current version record.
+
+        Returns:
+            TemplateVersion: The version record marked as current, or None
+        """
+        for version in self.versions:
+            if version.is_current:
+                return version
+        return None
 
 
 class TemplateVersion(Base):
-    """Template version model for tracking template change history."""
+    """
+    Template version model for tracking template change history.
+
+    Each version stores complete metadata including file information,
+    PDF metadata, and field count. This ensures version atomicity.
+    """
 
     __tablename__ = "template_versions"
 
+    # Primary Key
     id = Column(Integer, primary_key=True, index=True)
+
+    # Foreign Key
     template_id = Column(
-        Integer,
-        ForeignKey("pdf_templates.id"),
-        nullable=False,
-        index=True
+        Integer, ForeignKey("pdf_templates.id"), nullable=False, index=True
     )
+
+    # Version Information
     version_number = Column(String(50), nullable=False)
     change_summary = Column(Text, nullable=True)
     is_current = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # File Information (version-specific)
+    file_path = Column(String(500), nullable=False)
+    file_size_bytes = Column(Integer, nullable=False)
+    field_count = Column(Integer, nullable=False, default=0)
+    sepe_url = Column(String(1000), nullable=True)
 
     # PDF Document Metadata
     title = Column(String(255), nullable=True)
@@ -95,17 +122,26 @@ class TemplateVersion(Base):
     # Relationships
     template = relationship("PDFTemplate", back_populates="versions")
     fields = relationship(
-        "TemplateField",
-        back_populates="version",
-        cascade="all, delete-orphan"
+        "TemplateField", back_populates="version", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
         return (
             f"<TemplateVersion(id={self.id}, "
             f"template_id={self.template_id}, "
-            f"version='{self.version_number}')>"
+            f"version_number='{self.version_number}', "
+            f"is_current={self.is_current})>"
         )
+
+    @property
+    def file_size_mb(self) -> float:
+        """
+        Get file size in megabytes.
+
+        Returns:
+            float: File size in MB, rounded to 2 decimal places
+        """
+        return round(self.file_size_bytes / (1024 * 1024), 2)
 
 
 class TemplateField(Base):
@@ -118,10 +154,7 @@ class TemplateField(Base):
 
     # Foreign Key to template_versions
     version_id = Column(
-        Integer,
-        ForeignKey("template_versions.id"),
-        nullable=False,
-        index=True
+        Integer, ForeignKey("template_versions.id"), nullable=False, index=True
     )
 
     # Field Identification

@@ -180,6 +180,10 @@ async def ingest_template(
         max_length=1000,
         description="Optional SEPE source URL"
     ),
+    comment: str = Form(
+        None,
+        description="Optional comment about the template"
+    ),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -258,6 +262,7 @@ async def ingest_template(
             name=name,
             version=version,
             sepe_url=sepe_url,
+            comment=comment,
             user_id=int(current_user.id)  # type: ignore
         )
 
@@ -270,14 +275,20 @@ async def ingest_template(
         import hashlib
         checksum = hashlib.sha256(file_content).hexdigest()
 
+        # Get current version data for response
+        current_version = template.current_version_record
+
         # Return success response
         return TemplateIngestResponse(
             id=int(template.id),  # type: ignore
             name=str(template.name),
-            version=str(template.version),
-            file_path=str(template.file_path),
-            file_size_bytes=int(template.file_size_bytes),  # type: ignore
-            field_count=int(template.field_count),  # type: ignore
+            current_version=str(template.current_version),
+            comment=template.comment,
+            # From current version
+            file_path=str(current_version.file_path) if current_version else None,
+            file_size_bytes=int(current_version.file_size_bytes) if current_version else 0,  # type: ignore
+            field_count=int(current_version.field_count) if current_version else 0,  # type: ignore
+            sepe_url=current_version.sepe_url if current_version else None,
             checksum=checksum,
             message="Template ingested successfully"
         )

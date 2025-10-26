@@ -196,17 +196,17 @@ const TemplatesTable: React.FC<TemplatesTableProps> = ({
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm text-gray-700 dark:text-gray-300">
-                  {template.version}
+                  {template.current_version}
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm text-gray-700 dark:text-gray-300">
-                  {formatFileSize(template.file_size_bytes)}
+                  {template.file_size_bytes ? formatFileSize(template.file_size_bytes) : '—'}
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm text-gray-700 dark:text-gray-300">
-                  {template.field_count}
+                  {template.field_count ?? '—'}
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">

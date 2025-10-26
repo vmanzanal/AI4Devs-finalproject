@@ -321,7 +321,9 @@ const TemplateFieldsModal: React.FC<TemplateFieldsModalProps> = ({
                         {field.page_number}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-600 dark:text-gray-400">
-                        ({field.position.x}, {field.position.y})
+                        {field.position_data
+                          ? `(${field.position_data.x0.toFixed(1)}, ${field.position_data.y0.toFixed(1)})`
+                          : '—'}
                       </td>
                     </tr>
                   ))}

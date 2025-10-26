@@ -59,6 +59,7 @@ class TemplateService:
         name: str,
         version: str,
         sepe_url: Optional[str],
+        comment: Optional[str],
         user_id: int
     ) -> PDFTemplate:
         """
@@ -133,6 +134,7 @@ class TemplateService:
                 file_size=file_size,
                 checksum=checksum,
                 sepe_url=sepe_url,
+                comment=comment,
                 user_id=user_id,
                 fields=analyzed_fields,
                 metadata=metadata,
@@ -335,6 +337,7 @@ class TemplateService:
         file_size: int,
         checksum: str,
         sepe_url: Optional[str],
+        comment: Optional[str],
         user_id: int,
         fields: List[TemplateFieldData],
         metadata: Dict[str, Any],
@@ -365,28 +368,31 @@ class TemplateService:
             TemplateIngestionError: Database transaction failed
         """
         try:
-            # Create PDFTemplate record
+            # Create PDFTemplate record (without version-specific fields)
             template = PDFTemplate(
                 name=name,
-                version=version,
-                file_path=file_path,
-                file_size_bytes=file_size,
-                field_count=len(fields),
-                sepe_url=sepe_url,
+                current_version=version,
+                comment=comment,  # Optional comment from user
                 uploaded_by=user_id
             )
             self.db.add(template)
             self.db.flush()  # Get template.id without committing
             self.logger.debug(
-                f"Created PDFTemplate: id={template.id}"
+                f"Created PDFTemplate: id={template.id}, current_version={version}"
             )
 
-            # Create TemplateVersion record
+            # Create TemplateVersion record (with version-specific fields)
             template_version = TemplateVersion(
                 template_id=template.id,
                 version_number=version,
                 change_summary="Initial version",
                 is_current=True,
+                # File information (moved from PDFTemplate)
+                file_path=file_path,
+                file_size_bytes=file_size,
+                field_count=len(fields),
+                sepe_url=sepe_url,
+                # PDF document metadata
                 title=metadata.get("title"),
                 author=metadata.get("author"),
                 subject=metadata.get("subject"),
@@ -397,7 +403,8 @@ class TemplateService:
             self.db.add(template_version)
             self.db.flush()  # Get version.id without committing
             self.logger.debug(
-                f"Created TemplateVersion: id={template_version.id}"
+                f"Created TemplateVersion: id={template_version.id}, "
+                f"file_path={file_path}, file_size={file_size}, field_count={len(fields)}"
             )
 
             # Create TemplateField records (bulk insert)

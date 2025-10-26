@@ -3,21 +3,33 @@
  * Matches backend API response structures
  */
 
-// Base Template Types (aligned with backend PDFTemplate model)
+/**
+ * Base Template Types (aligned with refactored backend PDFTemplate model)
+ * 
+ * Note: file_path, file_size_bytes, field_count, and sepe_url are fetched
+ * from the current version relationship, not directly from the template.
+ */
 export interface Template {
   id: number;
   name: string;
-  version: string;
-  file_path: string;
-  file_size_bytes: number;
-  field_count: number;
-  sepe_url: string | null;
+  current_version: string;
+  comment: string | null;
   uploaded_by: number | null;
   created_at: string;
   updated_at: string | null;
+  // Optional fields from current version (may be null if no current version)
+  file_path?: string | null;
+  file_size_bytes?: number | null;
+  field_count?: number | null;
+  sepe_url?: string | null;
 }
 
-// Enhanced Template Version with PDF metadata
+/**
+ * Template Version with PDF metadata and file information
+ * 
+ * Each version now contains its own file data (file_path, file_size_bytes, etc.)
+ * to implement version atomicity.
+ */
 export interface TemplateVersion {
   id: number;
   template_id: number;
@@ -25,6 +37,11 @@ export interface TemplateVersion {
   change_summary: string | null;
   is_current: boolean;
   created_at: string;
+  // File Information (version-specific)
+  file_path: string;
+  file_size_bytes: number;
+  field_count: number;
+  sepe_url: string | null;
   // PDF Document Metadata
   title: string | null;
   author: string | null;
@@ -100,7 +117,7 @@ export interface VersionInfo {
 // Filter and Sort Types
 export interface TemplatesFilters {
   name?: string;
-  version?: string;
+  current_version?: string;
   search?: string;
 }
 

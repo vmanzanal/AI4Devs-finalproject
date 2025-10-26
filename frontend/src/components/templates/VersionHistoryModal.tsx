@@ -17,7 +17,7 @@
 import { CheckCircle, Clock, Loader2, User, X } from 'lucide-react';
 import React, { useEffect, useRef } from 'react';
 import type { TemplateVersion } from '../../types/templates.types';
-import { formatDate, formatFileSize } from '../../utils/formatters';
+import { formatDate } from '../../utils/formatters';
 import TablePagination from './TablePagination';
 
 /**
