@@ -42,24 +42,20 @@ class PDFTemplate(Base):
 
     # Ownership and Timestamps
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
     uploader = relationship("User", back_populates="uploaded_templates")
     versions = relationship(
-        "TemplateVersion", back_populates="template", cascade="all, delete-orphan"
+        "TemplateVersion",
+        back_populates="template",
+        cascade="all, delete-orphan"
     )
-    source_comparisons = relationship(
-        "Comparison",
-        foreign_keys="Comparison.source_template_id",
-        back_populates="source_template",
-    )
-    target_comparisons = relationship(
-        "Comparison",
-        foreign_keys="Comparison.target_template_id",
-        back_populates="target_template",
-    )
+    # Note: Comparisons now reference template_versions, not pdf_templates
+    # See TemplateVersion model for source_comparisons and target_comparisons
 
     def __repr__(self) -> str:
         return (
@@ -123,6 +119,17 @@ class TemplateVersion(Base):
     template = relationship("PDFTemplate", back_populates="versions")
     fields = relationship(
         "TemplateField", back_populates="version", cascade="all, delete-orphan"
+    )
+    # Comparison relationships (added for persistence feature)
+    source_comparisons = relationship(
+        "Comparison",
+        foreign_keys="Comparison.source_version_id",
+        back_populates="source_version"
+    )
+    target_comparisons = relationship(
+        "Comparison",
+        foreign_keys="Comparison.target_version_id",
+        back_populates="target_version"
     )
 
     def __repr__(self) -> str:

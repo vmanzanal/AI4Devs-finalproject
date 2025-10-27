@@ -2,16 +2,23 @@
 Comparison service for template version analysis.
 
 This module provides the ComparisonService class that performs in-memory
-comparison of two template versions, analyzing field-by-field differences.
+comparison of two template versions, analyzing field-by-field differences,
+and provides persistence methods for saving and retrieving comparisons.
 """
 import logging
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+from math import ceil
 
-from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.models.template import TemplateField, TemplateVersion
+from app.models.template import TemplateField, TemplateVersion, PDFTemplate
+from app.models.comparison import Comparison, ComparisonField
 from app.schemas.comparison import (
     ComparisonResult,
+    ComparisonSummary,
     DiffStatus,
     FieldChange,
     FieldChangeStatus,
@@ -524,4 +531,367 @@ class ComparisonService:
             DiffStatus.EQUAL if source_set == target_set
             else DiffStatus.DIFFERENT
         )
+
+    # ========================================================================
+    # Persistence Methods
+    # ========================================================================
+
+    def save_comparison(
+        self,
+        user_id: int,
+        comparison_result: ComparisonResult
+    ) -> int:
+        """
+        Save a comparison result to the database.
+
+        Performs a single transaction that creates both the Comparison record
+        and all associated ComparisonField records.
+
+        Args:
+            user_id: ID of user saving the comparison
+            comparison_result: Complete comparison data from analyze endpoint
+
+        Returns:
+            int: ID of the created comparison record
+
+        Raises:
+            ValueError: If source/target versions don't exist
+            SQLAlchemyError: If database transaction fails
+        """
+        logger.info(
+            f"Saving comparison: source={comparison_result.source_version_id}, "
+            f"target={comparison_result.target_version_id}, "
+            f"user={user_id}"
+        )
+
+        try:
+            # Verify versions exist
+            source_version = self._get_version(
+                comparison_result.source_version_id
+            )
+            target_version = self._get_version(
+                comparison_result.target_version_id
+            )
+
+            # Create Comparison record
+            comparison = Comparison(
+                source_version_id=comparison_result.source_version_id,
+                target_version_id=comparison_result.target_version_id,
+                status="completed",
+                created_by=user_id,
+                modification_percentage=(
+                    comparison_result.global_metrics.modification_percentage
+                ),
+                fields_added=comparison_result.global_metrics.fields_added,
+                fields_removed=comparison_result.global_metrics.fields_removed,
+                fields_modified=comparison_result.global_metrics.fields_modified,
+                fields_unchanged=(
+                    comparison_result.global_metrics.fields_unchanged
+                ),
+                completed_at=datetime.utcnow(),
+            )
+
+            self.db.add(comparison)
+            self.db.flush()  # Get comparison ID
+
+            # Create ComparisonField records
+            for field_change in comparison_result.field_changes:
+                comparison_field = ComparisonField(
+                    comparison_id=comparison.id,
+                    field_id=field_change.field_id,
+                    status=field_change.status.value,
+                    field_type=field_change.field_type,
+                    source_page_number=field_change.source_page_number,
+                    target_page_number=field_change.target_page_number,
+                    page_number_changed=field_change.page_number_changed,
+                    near_text_diff=(
+                        field_change.near_text_diff.value
+                        if field_change.near_text_diff else None
+                    ),
+                    source_near_text=field_change.source_near_text,
+                    target_near_text=field_change.target_near_text,
+                    value_options_diff=(
+                        field_change.value_options_diff.value
+                        if field_change.value_options_diff else None
+                    ),
+                    source_value_options=field_change.source_value_options,
+                    target_value_options=field_change.target_value_options,
+                    position_change=(
+                        field_change.position_change.value
+                        if field_change.position_change else None
+                    ),
+                    source_position=field_change.source_position,
+                    target_position=field_change.target_position,
+                )
+                self.db.add(comparison_field)
+
+            # Commit transaction
+            self.db.commit()
+
+            logger.info(
+                f"Comparison saved successfully: id={comparison.id}, "
+                f"fields={len(comparison_result.field_changes)}"
+            )
+
+            return comparison.id
+
+        except SQLAlchemyError as e:
+            self.db.rollback()
+            logger.error(f"Error saving comparison: {e}")
+            raise
+
+    def get_comparison(self, comparison_id: int) -> ComparisonResult:
+        """
+        Retrieve a saved comparison by ID.
+
+        Reconstructs the complete ComparisonResult from database records.
+
+        Args:
+            comparison_id: ID of saved comparison
+
+        Returns:
+            ComparisonResult: Reconstructed comparison data
+
+        Raises:
+            ValueError: If comparison not found
+        """
+        logger.info(f"Retrieving comparison: id={comparison_id}")
+
+        # Fetch comparison with eager loading
+        comparison = self.db.query(Comparison).options(
+            joinedload(Comparison.source_version).joinedload(
+                TemplateVersion.template
+            ),
+            joinedload(Comparison.target_version).joinedload(
+                TemplateVersion.template
+            ),
+        ).filter(Comparison.id == comparison_id).first()
+
+        if not comparison:
+            raise ValueError(f"Comparison with ID {comparison_id} not found")
+
+        # Fetch all comparison fields
+        comparison_fields = self.db.query(ComparisonField).filter(
+            ComparisonField.comparison_id == comparison_id
+        ).order_by(ComparisonField.field_id).all()
+
+        # Reconstruct GlobalMetrics
+        global_metrics = GlobalMetrics(
+            source_version_number=str(
+                comparison.source_version.version_number
+            ),
+            target_version_number=str(
+                comparison.target_version.version_number
+            ),
+            source_page_count=int(comparison.source_version.page_count),
+            target_page_count=int(comparison.target_version.page_count),
+            page_count_changed=(
+                comparison.source_version.page_count !=
+                comparison.target_version.page_count
+            ),
+            source_field_count=int(comparison.source_version.field_count),
+            target_field_count=int(comparison.target_version.field_count),
+            field_count_changed=(
+                comparison.source_version.field_count !=
+                comparison.target_version.field_count
+            ),
+            fields_added=int(comparison.fields_added),
+            fields_removed=int(comparison.fields_removed),
+            fields_modified=int(comparison.fields_modified),
+            fields_unchanged=int(comparison.fields_unchanged),
+            modification_percentage=float(
+                comparison.modification_percentage
+            ),
+            source_created_at=comparison.source_version.created_at,
+            target_created_at=comparison.target_version.created_at,
+        )
+
+        # Reconstruct FieldChange list
+        field_changes = []
+        for cf in comparison_fields:
+            field_change = FieldChange(
+                field_id=str(cf.field_id),
+                status=FieldChangeStatus(cf.status),
+                field_type=str(cf.field_type) if cf.field_type else None,
+                source_page_number=cf.source_page_number,
+                target_page_number=cf.target_page_number,
+                page_number_changed=bool(cf.page_number_changed),
+                near_text_diff=(
+                    DiffStatus(cf.near_text_diff)
+                    if cf.near_text_diff else DiffStatus.NOT_APPLICABLE
+                ),
+                source_near_text=(
+                    str(cf.source_near_text) if cf.source_near_text else None
+                ),
+                target_near_text=(
+                    str(cf.target_near_text) if cf.target_near_text else None
+                ),
+                value_options_diff=(
+                    DiffStatus(cf.value_options_diff)
+                    if cf.value_options_diff else DiffStatus.NOT_APPLICABLE
+                ),
+                source_value_options=cf.source_value_options,
+                target_value_options=cf.target_value_options,
+                position_change=(
+                    DiffStatus(cf.position_change)
+                    if cf.position_change else DiffStatus.NOT_APPLICABLE
+                ),
+                source_position=cf.source_position,
+                target_position=cf.target_position,
+            )
+            field_changes.append(field_change)
+
+        logger.info(
+            f"Comparison retrieved: id={comparison_id}, "
+            f"fields={len(field_changes)}"
+        )
+
+        return ComparisonResult(
+            source_version_id=int(comparison.source_version_id),
+            target_version_id=int(comparison.target_version_id),
+            global_metrics=global_metrics,
+            field_changes=field_changes,
+            analyzed_at=comparison.created_at,
+        )
+
+    def list_comparisons(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        search: Optional[str] = None
+    ) -> Tuple[List[ComparisonSummary], int]:
+        """
+        List saved comparisons with pagination and filtering.
+
+        Args:
+            page: Page number (1-indexed)
+            page_size: Items per page
+            sort_by: Field to sort by (created_at, modification_percentage)
+            sort_order: 'asc' or 'desc'
+            search: Optional search term for template names
+
+        Returns:
+            Tuple of (list of summaries, total count)
+        """
+        logger.info(
+            f"Listing comparisons: page={page}, "
+            f"page_size={page_size}, sort_by={sort_by}"
+        )
+
+        # Build query with joins
+        query = self.db.query(Comparison).options(
+            joinedload(Comparison.source_version).joinedload(
+                TemplateVersion.template
+            ),
+            joinedload(Comparison.target_version).joinedload(
+                TemplateVersion.template
+            ),
+        )
+
+        # Apply search filter if provided
+        if search:
+            query = query.join(
+                Comparison.source_version
+            ).join(
+                TemplateVersion.template.of_type(PDFTemplate)
+            ).filter(
+                PDFTemplate.name.ilike(f"%{search}%")
+            )
+
+        # Get total count
+        total = query.count()
+
+        # Apply sorting
+        sort_column = getattr(Comparison, sort_by, Comparison.created_at)
+        if sort_order == "asc":
+            query = query.order_by(sort_column.asc())
+        else:
+            query = query.order_by(sort_column.desc())
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        comparisons = query.offset(offset).limit(page_size).all()
+
+        # Convert to ComparisonSummary
+        summaries = []
+        for comparison in comparisons:
+            summary = ComparisonSummary(
+                id=int(comparison.id),
+                source_version_id=int(comparison.source_version_id),
+                target_version_id=int(comparison.target_version_id),
+                source_version_number=str(
+                    comparison.source_version.version_number
+                ),
+                target_version_number=str(
+                    comparison.target_version.version_number
+                ),
+                source_template_name=str(
+                    comparison.source_version.template.name
+                ),
+                target_template_name=str(
+                    comparison.target_version.template.name
+                ),
+                modification_percentage=float(
+                    comparison.modification_percentage
+                ),
+                fields_added=int(comparison.fields_added),
+                fields_removed=int(comparison.fields_removed),
+                fields_modified=int(comparison.fields_modified),
+                fields_unchanged=int(comparison.fields_unchanged),
+                created_at=comparison.created_at,
+                created_by=comparison.created_by,
+            )
+            summaries.append(summary)
+
+        logger.info(f"Found {total} comparisons, returning {len(summaries)}")
+
+        return summaries, total
+
+    def comparison_exists(
+        self,
+        source_version_id: int,
+        target_version_id: int
+    ) -> Optional[int]:
+        """
+        Check if a comparison already exists between two versions.
+
+        Checks in both directions (source->target and target->source).
+
+        Args:
+            source_version_id: Source version ID
+            target_version_id: Target version ID
+
+        Returns:
+            Optional[int]: Comparison ID if exists, None otherwise
+        """
+        logger.info(
+            f"Checking comparison existence: "
+            f"source={source_version_id}, target={target_version_id}"
+        )
+
+        # Check in both directions
+        comparison = self.db.query(Comparison).filter(
+            or_(
+                # Same direction
+                (
+                    (Comparison.source_version_id == source_version_id) &
+                    (Comparison.target_version_id == target_version_id)
+                ),
+                # Reverse direction
+                (
+                    (Comparison.source_version_id == target_version_id) &
+                    (Comparison.target_version_id == source_version_id)
+                )
+            )
+        ).first()
+
+        if comparison:
+            logger.info(f"Comparison exists: id={comparison.id}")
+            return comparison.id
+        else:
+            logger.info("Comparison does not exist")
+            return None
+
 

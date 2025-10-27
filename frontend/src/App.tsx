@@ -10,6 +10,7 @@ import ComparisonDetailsPage from './pages/comparisons/ComparisonDetailsPage'
 import ComparisonResultsPage from './pages/comparisons/ComparisonResultsPage'
 import ComparisonsPage from './pages/comparisons/ComparisonsPage'
 import CreateComparisonPage from './pages/comparisons/CreateComparisonPage'
+import SavedComparisonPage from './pages/comparisons/SavedComparisonPage'
 import HomePage from './pages/HomePage'
 import NotFoundPage from './pages/NotFoundPage'
 import TemplateAnalyzePage from './pages/TemplateAnalyzePage'
@@ -55,6 +56,7 @@ function App() {
                 <Route path="comparisons" element={<ComparisonsPage />} />
                 <Route path="comparisons/create" element={<CreateComparisonPage />} />
                 <Route path="comparisons/results" element={<ComparisonResultsPage />} />
+                <Route path="comparisons/results/:comparisonId" element={<SavedComparisonPage />} />
                 <Route path="comparisons/:id" element={<ComparisonDetailsPage />} />
                 
                 {/* Catch all - redirect to home */}

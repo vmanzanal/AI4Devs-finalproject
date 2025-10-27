@@ -9,7 +9,7 @@ const Layout: React.FC = () => {
       {/* Header */}
       <Header />
       
-      <div className="flex">
+      <div className="flex pt-16">
         {/* Sidebar */}
         <Sidebar />
         

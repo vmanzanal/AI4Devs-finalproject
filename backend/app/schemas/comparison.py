@@ -338,3 +338,299 @@ class ComparisonResult(BaseModel):
             }
         }
 
+
+# ============================================================================
+# Persistence Schemas (for saving and retrieving comparisons)
+# ============================================================================
+
+
+class ComparisonIngestRequest(BaseModel):
+    """
+    Request schema for persisting a comparison result.
+
+    Used by POST /api/v1/comparisons/ingest to save the output from
+    the /analyze endpoint.
+    """
+    source_version_id: int = Field(
+        ...,
+        gt=0,
+        description="Source version ID"
+    )
+    target_version_id: int = Field(
+        ...,
+        gt=0,
+        description="Target version ID"
+    )
+    global_metrics: GlobalMetrics = Field(
+        ...,
+        description="Global comparison metrics"
+    )
+    field_changes: List[FieldChange] = Field(
+        ...,
+        description="Detailed field-by-field changes"
+    )
+    analyzed_at: Optional[datetime] = Field(
+        None,
+        description="Timestamp of analysis (optional, will be ignored)"
+    )
+
+    @model_validator(mode='after')
+    def validate_different_versions(self) -> 'ComparisonIngestRequest':
+        """
+        Validate that source and target versions are different.
+
+        Raises:
+            ValueError: If source_version_id equals target_version_id
+        """
+        if self.source_version_id == self.target_version_id:
+            raise ValueError("Source and target versions must be different")
+        return self
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "source_version_id": 1,
+                "target_version_id": 2,
+                "global_metrics": {
+                    "source_version_number": "1.0",
+                    "target_version_number": "2.0",
+                    "source_page_count": 5,
+                    "target_page_count": 5,
+                    "page_count_changed": False,
+                    "source_field_count": 50,
+                    "target_field_count": 52,
+                    "field_count_changed": True,
+                    "fields_added": 2,
+                    "fields_removed": 0,
+                    "fields_modified": 1,
+                    "fields_unchanged": 49,
+                    "modification_percentage": 6.0,
+                    "source_created_at": "2024-01-15T10:30:00Z",
+                    "target_created_at": "2024-04-20T14:25:00Z"
+                },
+                "field_changes": []
+            }
+        }
+
+
+class ComparisonIngestResponse(BaseModel):
+    """
+    Response schema after successfully saving a comparison.
+
+    Returned by POST /api/v1/comparisons/ingest.
+    """
+    comparison_id: int = Field(
+        ...,
+        gt=0,
+        description="ID of the saved comparison"
+    )
+    message: str = Field(
+        ...,
+        description="Success message"
+    )
+    created_at: datetime = Field(
+        ...,
+        description="Timestamp when comparison was saved"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "comparison_id": 42,
+                "message": "Comparison saved successfully",
+                "created_at": "2025-10-27T10:30:00Z"
+            }
+        }
+
+
+class ComparisonSummary(BaseModel):
+    """
+    Summary of a saved comparison for list views.
+
+    Used by GET /api/v1/comparisons to provide lightweight
+    comparison metadata without full field details.
+    """
+    id: int = Field(
+        ...,
+        gt=0,
+        description="Comparison record ID"
+    )
+    source_version_id: int = Field(
+        ...,
+        gt=0,
+        description="Source version ID"
+    )
+    target_version_id: int = Field(
+        ...,
+        gt=0,
+        description="Target version ID"
+    )
+    source_version_number: str = Field(
+        ...,
+        description="Source version number"
+    )
+    target_version_number: str = Field(
+        ...,
+        description="Target version number"
+    )
+    source_template_name: str = Field(
+        ...,
+        description="Source template name"
+    )
+    target_template_name: str = Field(
+        ...,
+        description="Target template name"
+    )
+    modification_percentage: float = Field(
+        ...,
+        ge=0.0,
+        le=100.0,
+        description="Percentage of fields modified (0-100)"
+    )
+    fields_added: int = Field(
+        ...,
+        ge=0,
+        description="Number of fields added"
+    )
+    fields_removed: int = Field(
+        ...,
+        ge=0,
+        description="Number of fields removed"
+    )
+    fields_modified: int = Field(
+        ...,
+        ge=0,
+        description="Number of fields modified"
+    )
+    fields_unchanged: int = Field(
+        ...,
+        ge=0,
+        description="Number of fields unchanged"
+    )
+    created_at: datetime = Field(
+        ...,
+        description="When comparison was saved"
+    )
+    created_by: Optional[int] = Field(
+        None,
+        description="User ID who saved the comparison"
+    )
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "source_version_id": 10,
+                "target_version_id": 11,
+                "source_version_number": "1.0",
+                "target_version_number": "2.0",
+                "source_template_name": "Template A",
+                "target_template_name": "Template A",
+                "modification_percentage": 15.5,
+                "fields_added": 3,
+                "fields_removed": 1,
+                "fields_modified": 2,
+                "fields_unchanged": 44,
+                "created_at": "2025-10-27T10:00:00Z",
+                "created_by": 5
+            }
+        }
+
+
+class ComparisonListResponse(BaseModel):
+    """
+    Paginated list of saved comparisons.
+
+    Returned by GET /api/v1/comparisons with pagination metadata.
+    """
+    items: List[ComparisonSummary] = Field(
+        ...,
+        description="List of comparison summaries"
+    )
+    total: int = Field(
+        ...,
+        ge=0,
+        description="Total number of comparisons matching filters"
+    )
+    page: int = Field(
+        ...,
+        ge=1,
+        description="Current page number (1-indexed)"
+    )
+    page_size: int = Field(
+        ...,
+        ge=1,
+        le=100,
+        description="Number of items per page"
+    )
+    total_pages: int = Field(
+        ...,
+        ge=0,
+        description="Total number of pages"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "items": [
+                    {
+                        "id": 1,
+                        "source_version_id": 10,
+                        "target_version_id": 11,
+                        "source_version_number": "1.0",
+                        "target_version_number": "2.0",
+                        "source_template_name": "Template A",
+                        "target_template_name": "Template A",
+                        "modification_percentage": 15.5,
+                        "fields_added": 3,
+                        "fields_removed": 1,
+                        "fields_modified": 2,
+                        "fields_unchanged": 44,
+                        "created_at": "2025-10-27T10:00:00Z",
+                        "created_by": 5
+                    }
+                ],
+                "total": 25,
+                "page": 1,
+                "page_size": 20,
+                "total_pages": 2
+            }
+        }
+
+
+class ComparisonCheckResponse(BaseModel):
+    """
+    Response schema for checking if a comparison exists.
+
+    Returned by GET /api/v1/comparisons/check to avoid duplicate saves.
+    """
+    exists: bool = Field(
+        ...,
+        description="Whether comparison exists between the versions"
+    )
+    comparison_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="ID of existing comparison if found"
+    )
+    created_at: Optional[datetime] = Field(
+        None,
+        description="When existing comparison was created"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "exists": True,
+                    "comparison_id": 42,
+                    "created_at": "2025-10-27T10:00:00Z"
+                },
+                {
+                    "exists": False,
+                    "comparison_id": None,
+                    "created_at": None
+                }
+            ]
+        }

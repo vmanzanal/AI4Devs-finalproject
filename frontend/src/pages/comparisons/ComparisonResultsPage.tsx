@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { GlobalMetricsCard, ComparisonTable } from '../../components/comparisons';
+import { ComparisonTable, GlobalMetricsCard, SaveComparisonButton } from '../../components/comparisons';
 import type { ComparisonResult } from '../../types/comparison.types';
 
 const ComparisonResultsPage: React.FC = () => {
@@ -48,14 +48,32 @@ const ComparisonResultsPage: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {/* Page Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          Comparison Results
+        </h1>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          Detailed analysis of template version differences
+        </p>
+      </div>
+
       {/* Global Metrics Card */}
       <GlobalMetricsCard metrics={global_metrics} />
+
+      {/* Save Comparison Button */}
+      <SaveComparisonButton
+        comparisonResult={comparisonResult}
+        onSaveSuccess={(comparisonId) => {
+          console.log('Comparison saved with ID:', comparisonId);
+        }}
+      />
 
       {/* Field Changes Table */}
       <ComparisonTable fieldChanges={field_changes} />
 
       {/* Action Buttons */}
-      <div className="flex justify-between">
+      <div className="flex flex-col sm:flex-row gap-4 sm:justify-between">
         <button
           type="button"
           onClick={() => navigate('/comparisons/create')}
@@ -66,7 +84,7 @@ const ComparisonResultsPage: React.FC = () => {
         <button
           type="button"
           onClick={() => navigate('/comparisons')}
-          className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+          className="px-4 py-2 bg-secondary-600 text-white rounded-lg hover:bg-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary-500"
         >
           View All Comparisons
         </button>

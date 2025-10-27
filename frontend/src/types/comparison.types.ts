@@ -184,3 +184,108 @@ export interface ComparisonPageState {
   result: ComparisonResult | null;
 }
 
+// ============================================================================
+// Persistence Types (for saving and retrieving comparisons)
+// ============================================================================
+
+/**
+ * Summary of a saved comparison for list views.
+ *
+ * Lightweight view without field details for efficient browsing
+ * of comparison history.
+ */
+export interface ComparisonSummary {
+  /** Unique comparison ID */
+  id: number;
+  /** Source template version ID */
+  source_version_id: number;
+  /** Target template version ID */
+  target_version_id: number;
+  /** Source version number */
+  source_version_number: string;
+  /** Target version number */
+  target_version_number: string;
+  /** Name of source template */
+  source_template_name: string;
+  /** Name of target template */
+  target_template_name: string;
+  /** Percentage of fields that changed (0-100) */
+  modification_percentage: number;
+  /** Number of fields added in target */
+  fields_added: number;
+  /** Number of fields removed from source */
+  fields_removed: number;
+  /** Number of fields with changes */
+  fields_modified: number;
+  /** Number of fields without changes */
+  fields_unchanged: number;
+  /** When comparison was saved */
+  created_at: string;
+  /** User ID who saved the comparison (null if unknown) */
+  created_by: number | null;
+}
+
+/**
+ * Paginated list response for saved comparisons.
+ *
+ * Standard pagination structure with metadata for UI controls.
+ */
+export interface ComparisonListResponse {
+  /** Array of comparison summaries */
+  items: ComparisonSummary[];
+  /** Total number of comparisons (across all pages) */
+  total: number;
+  /** Current page number (1-indexed) */
+  page: number;
+  /** Number of items per page */
+  page_size: number;
+  /** Total number of pages */
+  total_pages: number;
+}
+
+/**
+ * Response from saving a comparison.
+ *
+ * Contains the new comparison ID and confirmation message.
+ */
+export interface SaveComparisonResponse {
+  /** ID of the saved comparison */
+  comparison_id: number;
+  /** Success message */
+  message: string;
+  /** Timestamp when comparison was saved */
+  created_at: string;
+}
+
+/**
+ * Response from checking if comparison exists.
+ *
+ * Used to prevent duplicate saves and link to existing comparisons.
+ */
+export interface ComparisonCheckResponse {
+  /** Whether a comparison exists */
+  exists: boolean;
+  /** Comparison ID if it exists, null otherwise */
+  comparison_id: number | null;
+  /** When existing comparison was created, null if doesn't exist */
+  created_at: string | null;
+}
+
+/**
+ * Parameters for listing saved comparisons.
+ *
+ * Supports pagination, sorting, and search functionality.
+ */
+export interface ListComparisonsParams {
+  /** Page number (1-indexed) */
+  page?: number;
+  /** Items per page (max 100) */
+  page_size?: number;
+  /** Field to sort by */
+  sort_by?: 'created_at' | 'modification_percentage' | 'fields_added' | 'fields_removed' | 'fields_modified';
+  /** Sort order */
+  sort_order?: 'asc' | 'desc';
+  /** Search term for template names */
+  search?: string;
+}
+

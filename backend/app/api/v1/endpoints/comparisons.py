@@ -26,6 +26,11 @@ from app.models.comparison import Comparison, ComparisonField
 from app.schemas.comparison import (
     ComparisonRequest,
     ComparisonResult,
+    ComparisonIngestRequest,
+    ComparisonIngestResponse,
+    ComparisonSummary,
+    ComparisonListResponse,
+    ComparisonCheckResponse,
 )
 from app.services.comparison_service import ComparisonService
 
@@ -239,13 +244,473 @@ async def analyze_comparison(
 
 
 
-# NOTE: The rest of this file contained legacy comparison endpoints that used
-# different schemas (ComparisonResponse, ComparisonCreate, etc). Those have been
-# commented out to avoid conflicts with the new schema definitions used by the
-# /analyze endpoint. The new comparison feature uses:
-# - ComparisonRequest (for input)
-# - ComparisonResult (for output)
-# - ComparisonService (for business logic)
-#
-# The legacy endpoints can be re-enabled by creating separate schema files
-# for the persistent comparison feature (e.g., comparison_persist.py schemas).
+# ============================================================================
+# Persistence Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/ingest",
+    response_model=ComparisonIngestResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Save Comparison Result",
+    description="""
+    Persist a comparison result to the database for future reference.
+
+    This endpoint accepts the same payload structure returned by the `/analyze`
+    endpoint, ensuring seamless integration between analysis and persistence.
+
+    **Use Case:**
+    After analyzing differences between template versions, users can save
+    the comparison results for:
+    - Historical tracking
+    - Audit trails
+    - Sharing with team members
+    - Avoiding duplicate analysis
+
+    **Authentication Required:** Valid JWT token must be provided.
+
+    **Validation:**
+    - Source and target version IDs must exist
+    - Source and target must be different versions
+    - Global metrics and field changes must be provided
+
+    **Note:** The endpoint automatically checks for duplicate comparisons
+    before saving. If the same comparison already exists, it will succeed
+    without creating a duplicate (idempotent operation).
+    """,
+    responses={
+        201: {
+            "description": "Comparison saved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "comparison_id": 42,
+                        "message": "Comparison saved successfully",
+                        "created_at": "2025-10-27T10:30:00Z"
+                    }
+                }
+            }
+        },
+        400: {"description": "Validation error (same versions)"},
+        401: {"description": "Not authenticated"},
+        404: {"description": "Version not found"},
+        422: {"description": "Invalid request body"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["comparisons"]
+)
+async def ingest_comparison(
+    request: ComparisonIngestRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> ComparisonIngestResponse:
+    """
+    Save a comparison result to the database.
+
+    Args:
+        request: Complete comparison data from analyze endpoint
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        ComparisonIngestResponse: ID and metadata of saved comparison
+
+    Raises:
+        HTTPException: For various error conditions
+    """
+    logger.info(
+        f"Ingesting comparison by user {current_user.id}: "
+        f"source={request.source_version_id}, target={request.target_version_id}"
+    )
+
+    try:
+        # Create comparison service
+        comparison_service = ComparisonService(db)
+
+        # Convert schema to ComparisonResult
+        comparison_result = ComparisonResult(
+            source_version_id=request.source_version_id,
+            target_version_id=request.target_version_id,
+            global_metrics=request.global_metrics,
+            field_changes=request.field_changes,
+        )
+
+        # Save comparison
+        comparison_id = comparison_service.save_comparison(
+            user_id=current_user.id,
+            comparison_result=comparison_result
+        )
+
+        # Get saved comparison to get created_at
+        saved_comparison = db.query(Comparison).filter(
+            Comparison.id == comparison_id
+        ).first()
+
+        logger.info(
+            f"Comparison ingested successfully: id={comparison_id}"
+        )
+
+        return ComparisonIngestResponse(
+            comparison_id=comparison_id,
+            message="Comparison saved successfully",
+            created_at=saved_comparison.created_at
+        )
+
+    except ValueError as e:
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            logger.warning(f"Version not found: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_msg
+            )
+        logger.warning(f"Validation error: {error_msg}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Comparison ingest error: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save comparison"
+        )
+
+
+@router.get(
+    "/check",
+    response_model=ComparisonCheckResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Check if Comparison Exists",
+    description="""
+    Check if a comparison already exists between two template versions.
+
+    This endpoint is useful before calling `/ingest` to avoid saving
+    duplicate comparisons. It performs a bidirectional check (finds
+    comparisons regardless of source/target order).
+
+    **Use Case:**
+    - Show "Already compared" message in UI
+    - Link to existing comparison instead of creating duplicate
+    - Conditional save logic
+
+    **Authentication Required:** Valid JWT token must be provided.
+    """,
+    responses={
+        200: {
+            "description": "Check completed successfully",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "exists": {
+                            "value": {
+                                "exists": True,
+                                "comparison_id": 42,
+                                "created_at": "2025-10-27T10:00:00Z"
+                            }
+                        },
+                        "not_exists": {
+                            "value": {
+                                "exists": False,
+                                "comparison_id": None,
+                                "created_at": None
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"},
+        422: {"description": "Invalid query parameters"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["comparisons"]
+)
+async def check_comparison_exists(
+    source_version_id: int = Query(..., gt=0, description="Source version ID"),
+    target_version_id: int = Query(..., gt=0, description="Target version ID"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> ComparisonCheckResponse:
+    """
+    Check if a comparison exists between two versions.
+
+    Args:
+        source_version_id: Source version ID
+        target_version_id: Target version ID
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        ComparisonCheckResponse: Existence status and comparison ID if found
+
+    Raises:
+        HTTPException: For various error conditions
+    """
+    logger.info(
+        f"Checking comparison existence by user {current_user.id}: "
+        f"source={source_version_id}, target={target_version_id}"
+    )
+
+    try:
+        # Create comparison service
+        comparison_service = ComparisonService(db)
+
+        # Check if comparison exists
+        existing_id = comparison_service.comparison_exists(
+            source_version_id=source_version_id,
+            target_version_id=target_version_id
+        )
+
+        if existing_id:
+            # Get created_at
+            comparison = db.query(Comparison).filter(
+                Comparison.id == existing_id
+            ).first()
+
+            logger.info(f"Comparison exists: id={existing_id}")
+
+            return ComparisonCheckResponse(
+                exists=True,
+                comparison_id=existing_id,
+                created_at=comparison.created_at
+            )
+        else:
+            logger.info("Comparison does not exist")
+
+            return ComparisonCheckResponse(
+                exists=False,
+                comparison_id=None,
+                created_at=None
+            )
+
+    except Exception as e:
+        logger.error(
+            f"Error checking comparison: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check comparison"
+        )
+
+
+@router.get(
+    "/{comparison_id}",
+    response_model=ComparisonResult,
+    status_code=status.HTTP_200_OK,
+    summary="Get Saved Comparison",
+    description="""
+    Retrieve a saved comparison by its ID.
+
+    Returns the complete comparison data including global metrics and all
+    field-by-field changes, in the same format as the `/analyze` endpoint.
+
+    **Use Case:**
+    - View historical comparison results
+    - Share comparison links with team members
+    - Reuse comparison data without re-analyzing
+
+    **Authentication Required:** Valid JWT token must be provided.
+    """,
+    responses={
+        200: {
+            "description": "Comparison retrieved successfully",
+        },
+        401: {"description": "Not authenticated"},
+        404: {"description": "Comparison not found"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["comparisons"]
+)
+async def get_comparison(
+    comparison_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> ComparisonResult:
+    """
+    Retrieve a saved comparison by ID.
+
+    Args:
+        comparison_id: ID of the comparison to retrieve
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        ComparisonResult: Complete comparison data
+
+    Raises:
+        HTTPException: If comparison not found or other errors
+    """
+    logger.info(
+        f"Retrieving comparison {comparison_id} by user {current_user.id}"
+    )
+
+    try:
+        # Create comparison service
+        comparison_service = ComparisonService(db)
+
+        # Get comparison
+        result = comparison_service.get_comparison(comparison_id)
+
+        logger.info(f"Comparison {comparison_id} retrieved successfully")
+
+        return result
+
+    except ValueError as e:
+        logger.warning(f"Comparison not found: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Error retrieving comparison {comparison_id}: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve comparison"
+        )
+
+
+@router.get(
+    "/",
+    response_model=ComparisonListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="List Saved Comparisons",
+    description="""
+    List all saved comparisons with pagination, sorting, and optional search.
+
+    Returns a lightweight summary of each comparison (without field details)
+    to enable efficient browsing of comparison history.
+
+    **Features:**
+    - Pagination (page and page_size)
+    - Sorting by any field (created_at, modification_percentage, etc.)
+    - Search by template name
+    - Total count for pagination UI
+
+    **Authentication Required:** Valid JWT token must be provided.
+    """,
+    responses={
+        200: {
+            "description": "List retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "items": [
+                            {
+                                "id": 1,
+                                "source_version_id": 10,
+                                "target_version_id": 11,
+                                "source_version_number": "1.0",
+                                "target_version_number": "2.0",
+                                "source_template_name": "Template A",
+                                "target_template_name": "Template A",
+                                "modification_percentage": 15.5,
+                                "fields_added": 3,
+                                "fields_removed": 1,
+                                "fields_modified": 2,
+                                "fields_unchanged": 44,
+                                "created_at": "2025-10-27T10:00:00Z",
+                                "created_by": 5
+                            }
+                        ],
+                        "total": 25,
+                        "page": 1,
+                        "page_size": 20,
+                        "total_pages": 2
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"},
+        422: {"description": "Invalid query parameters"},
+        500: {"description": "Internal server error"}
+    },
+    tags=["comparisons"]
+)
+async def list_comparisons(
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_order: str = Query(
+        "desc",
+        regex="^(asc|desc)$",
+        description="Sort order (asc or desc)"
+    ),
+    search: Optional[str] = Query(
+        None,
+        description="Search term for template names"
+    ),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> ComparisonListResponse:
+    """
+    List saved comparisons with pagination and filtering.
+
+    Args:
+        page: Page number (1-indexed)
+        page_size: Number of items per page
+        sort_by: Field name to sort by
+        sort_order: Sort direction (asc or desc)
+        search: Optional search term
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        ComparisonListResponse: Paginated list with metadata
+
+    Raises:
+        HTTPException: For various error conditions
+    """
+    logger.info(
+        f"Listing comparisons by user {current_user.id}: "
+        f"page={page}, page_size={page_size}"
+    )
+
+    try:
+        # Create comparison service
+        comparison_service = ComparisonService(db)
+
+        # Get comparisons
+        summaries, total = comparison_service.list_comparisons(
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            search=search
+        )
+
+        # Calculate total pages
+        from math import ceil
+        total_pages = ceil(total / page_size) if total > 0 else 0
+
+        logger.info(
+            f"Found {total} comparisons, returning page {page}"
+        )
+
+        return ComparisonListResponse(
+            items=summaries,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Error listing comparisons: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list comparisons"
+        )
