@@ -217,3 +217,6 @@ export * from './pdfAnalysis';
 // Template Types
 export * from './templates.types';
 
+// Comparison Types
+export * from './comparison.types';
+

@@ -7,6 +7,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import LoginPage from './pages/auth/LoginPage'
 import RegisterPage from './pages/auth/RegisterPage'
 import ComparisonDetailsPage from './pages/comparisons/ComparisonDetailsPage'
+import ComparisonResultsPage from './pages/comparisons/ComparisonResultsPage'
 import ComparisonsPage from './pages/comparisons/ComparisonsPage'
 import CreateComparisonPage from './pages/comparisons/CreateComparisonPage'
 import HomePage from './pages/HomePage'
@@ -53,6 +54,7 @@ function App() {
                 {/* Comparisons */}
                 <Route path="comparisons" element={<ComparisonsPage />} />
                 <Route path="comparisons/create" element={<CreateComparisonPage />} />
+                <Route path="comparisons/results" element={<ComparisonResultsPage />} />
                 <Route path="comparisons/:id" element={<ComparisonDetailsPage />} />
                 
                 {/* Catch all - redirect to home */}

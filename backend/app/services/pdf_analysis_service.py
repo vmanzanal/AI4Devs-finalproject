@@ -384,14 +384,16 @@ class PDFAnalysisService:
         field_name = field.get('field_name', '')
         
         if field_name:
-            # Clean up field name - remove common prefixes and suffixes
+           # Patrón flexible: Letra (a-z), seguida de uno o más dígitos (\d+), 
+           # y luego cero o más letras o dígitos (opcionales para sufijos como VIK).
+           # Usamos re.IGNORECASE para que detecte A, B, C...
             cleaned_name = field_name.strip('/')
             
             # Extract meaningful part from complex field names
             # Examples: "form1[0].#subform[0].A0101[0]" -> "A0101"
-            match = re.search(r'([A-Z]\d+)', cleaned_name)
+            match = re.search(r'([a-z]\d+[a-z0-9]*)', cleaned_name, re.IGNORECASE)
             if match:
-                return match.group(1)
+                return match.group(1).upper()
             
             # If no pattern match, use the cleaned name
             if cleaned_name:

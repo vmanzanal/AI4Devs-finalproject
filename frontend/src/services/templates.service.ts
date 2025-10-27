@@ -6,6 +6,7 @@
  * - Downloading template PDFs
  * - Fetching template versions with metadata
  * - Fetching template AcroForm fields
+ * - Comparing template versions (analyze differences)
  *
  * Features:
  * - Authentication token management (via apiService)
@@ -14,9 +15,13 @@
  * - Support for pagination, sorting, filtering, and search
  *
  * @author AI4Devs
- * @date 2025-10-25
+ * @date 2025-10-26
  */
 
+import type {
+  ComparisonRequest,
+  ComparisonResult,
+} from '../types/comparison.types';
 import type {
   FieldsFilters,
   TemplateFieldListResponse,
@@ -62,7 +67,7 @@ class TemplatesService {
   ): Promise<TemplateListResponse> {
     const params = {
       limit: filters?.limit ?? 20,
-      offset: filters?.offset ?? 0,
+      skip: filters?.offset ?? 0,
       sort_by: filters?.sort_by ?? 'updated_at',
       sort_order: filters?.sort_order ?? 'desc',
       ...(filters?.search && { search: filters.search }),
@@ -422,6 +427,77 @@ class TemplatesService {
       '/templates/ingest/version',
       formData
     );
+  }
+
+  /**
+   * Analyze differences between two template versions
+   *
+   * Performs an in-memory comparison of two template versions using database
+   * data (no PDF re-processing). Returns global metrics and detailed field-by-field
+   * comparison showing added, removed, and modified fields.
+   *
+   * This is a fast, efficient operation that compares:
+   * - Page counts
+   * - Field counts
+   * - Field attributes (position, label text, value options)
+   * - Field types and metadata
+   *
+   * @param request - Comparison request with source and target version IDs
+   * @returns Promise resolving to detailed comparison result
+   * @throws Error if versions not found, same version IDs, or analysis fails
+   *
+   * @example
+   * ```typescript
+   * // Compare two versions
+   * const result = await templatesService.analyzeComparison({
+   *   source_version_id: 1,
+   *   target_version_id: 2
+   * });
+   *
+   * // Access global metrics
+   * console.log(`${result.global_metrics.fields_added} fields added`);
+   * console.log(`${result.global_metrics.modification_percentage}% changed`);
+   *
+   * // Filter field changes
+   * const addedFields = result.field_changes.filter(
+   *   field => field.status === 'ADDED'
+   * );
+   * ```
+   */
+  async analyzeComparison(
+    request: ComparisonRequest
+  ): Promise<ComparisonResult> {
+    // Validate request - check positive IDs first
+    if (request.source_version_id <= 0 || request.target_version_id <= 0) {
+      throw new Error('Version IDs must be positive integers');
+    }
+
+    if (request.source_version_id === request.target_version_id) {
+      throw new Error('Source and target versions must be different');
+    }
+
+    try {
+      return await apiService.post<ComparisonResult>(
+        '/comparisons/analyze',
+        { ...request }
+      );
+    } catch (error) {
+      // Enhanced error handling
+      if (error instanceof Error) {
+        // Re-throw with more context if it's a 404
+        if (error.message.includes('404') || error.message.includes('not found')) {
+          throw new Error(
+            `One or both versions not found. Please verify version IDs exist.`
+          );
+        }
+
+        // Re-throw with context for other errors
+        throw new Error(`Failed to analyze comparison: ${error.message}`);
+      }
+
+      // Fallback for non-Error objects
+      throw new Error('Failed to analyze comparison due to an unknown error');
+    }
   }
 }
 
