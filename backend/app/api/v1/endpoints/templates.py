@@ -57,6 +57,8 @@ from app.services.pdf_analysis_service import (
     InvalidPDFError,
     NoFormFieldsError
 )
+from app.services.activity_service import ActivityService
+from app.schemas.activity import ActivityType
 
 router = APIRouter()
 
@@ -1067,7 +1069,9 @@ def get_template_versions(
     operation_id="analyze_pdf_template"
 )
 async def analyze_pdf_template(
-    file: UploadFile = File(..., description="PDF file to analyze")
+    file: UploadFile = File(..., description="PDF file to analyze"),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Optional[Session] = Depends(get_db)
 ) -> Any:
     """
     Analyze uploaded PDF template and extract AcroForm field structure.
@@ -1158,6 +1162,16 @@ async def analyze_pdf_template(
                 processing_time_ms=processing_time_ms,
                 document_pages=document_pages
             )
+            
+            # Log TEMPLATE_ANALYSIS activity (if user is authenticated)
+            if current_user and db:
+                activity_service = ActivityService(db)
+                activity_service.log_activity(
+                    user_id=current_user.id,
+                    activity_type=ActivityType.TEMPLATE_ANALYSIS.value,
+                    description=f"Template analyzed: '{file.filename}' ({len(template_fields)} fields) by {current_user.email}",
+                    entity_id=None
+                )
             
             return response
             

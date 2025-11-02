@@ -52,9 +52,10 @@ async def system_info() -> Dict[str, Any]:
 
 
 # Include endpoint routers
-from app.api.v1.endpoints import auth, templates, comparisons, ingest
+from app.api.v1.endpoints import auth, templates, comparisons, ingest, activity
 
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
 api_router.include_router(templates.router, prefix="/templates", tags=["templates"])
 api_router.include_router(ingest.router, prefix="/templates", tags=["template-ingestion"])
 api_router.include_router(comparisons.router, prefix="/comparisons", tags=["comparisons"])
+api_router.include_router(activity.router, prefix="/activity", tags=["activity"])

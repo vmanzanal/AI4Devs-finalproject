@@ -21,7 +21,7 @@ from app.core.auth import (
 )
 from app.core.database import get_db
 from app.models.user import User
-from app.models.template import PDFTemplate
+from app.models.template import PDFTemplate, TemplateVersion
 from app.models.comparison import Comparison, ComparisonField
 from app.schemas.comparison import (
     ComparisonRequest,
@@ -33,6 +33,8 @@ from app.schemas.comparison import (
     ComparisonCheckResponse,
 )
 from app.services.comparison_service import ComparisonService
+from app.services.activity_service import ActivityService
+from app.schemas.activity import ActivityType
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -215,6 +217,27 @@ async def analyze_comparison(
             f"{result.global_metrics.fields_modified} modified"
         )
 
+        # Get template and version info for readable activity description
+        source_version = db.query(TemplateVersion).filter(
+            TemplateVersion.id == request.source_version_id
+        ).first()
+        target_version = db.query(TemplateVersion).filter(
+            TemplateVersion.id == request.target_version_id
+        ).first()
+        
+        template_name = source_version.template.name if source_version else "Unknown"
+        source_version_name = source_version.version_number if source_version else str(request.source_version_id)
+        target_version_name = target_version.version_number if target_version else str(request.target_version_id)
+
+        # Log COMPARISON_ANALYSIS activity
+        activity_service = ActivityService(db)
+        activity_service.log_activity(
+            user_id=current_user.id,
+            activity_type=ActivityType.COMPARISON_ANALYSIS.value,
+            description=f"Comparison analyzed: {template_name} {source_version_name} vs {target_version_name} by {current_user.email}",
+            entity_id=None
+        )
+
         return result
 
     except ValueError as e:
@@ -349,6 +372,27 @@ async def ingest_comparison(
 
         logger.info(
             f"Comparison ingested successfully: id={comparison_id}"
+        )
+
+        # Get template and version info for readable activity description
+        source_version = db.query(TemplateVersion).filter(
+            TemplateVersion.id == request.source_version_id
+        ).first()
+        target_version = db.query(TemplateVersion).filter(
+            TemplateVersion.id == request.target_version_id
+        ).first()
+        
+        template_name = source_version.template.name if source_version else "Unknown"
+        source_version_name = source_version.version_number if source_version else str(request.source_version_id)
+        target_version_name = target_version.version_number if target_version else str(request.target_version_id)
+
+        # Log COMPARISON_SAVED activity
+        activity_service = ActivityService(db)
+        activity_service.log_activity(
+            user_id=current_user.id,
+            activity_type=ActivityType.COMPARISON_SAVED.value,
+            description=f"Comparison saved: {template_name} {source_version_name} vs {target_version_name} by {current_user.email}",
+            entity_id=comparison_id
         )
 
         return ComparisonIngestResponse(

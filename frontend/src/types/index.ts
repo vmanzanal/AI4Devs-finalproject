@@ -220,3 +220,6 @@ export * from './templates.types';
 // Comparison Types
 export * from './comparison.types';
 
+// Activity Types
+export * from './activity.types';
+

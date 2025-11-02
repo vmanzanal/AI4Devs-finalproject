@@ -54,6 +54,8 @@ from app.schemas.auth import (
     PasswordChange,
 )
 from app.services import user_service
+from app.services.activity_service import ActivityService
+from app.schemas.activity import ActivityType
 
 router = APIRouter()
 
@@ -122,6 +124,15 @@ def register(
 
     # Create new user using service layer
     db_user = user_service.create_user(db, user_data)
+
+    # Log NEW_USER activity
+    activity_service = ActivityService(db)
+    activity_service.log_activity(
+        user_id=db_user.id,
+        activity_type=ActivityType.NEW_USER.value,
+        description=f"New user registered: {db_user.email}",
+        entity_id=db_user.id
+    )
 
     return UserResponse(
         id=db_user.id,
@@ -211,6 +222,15 @@ def login(
     access_token_expires = timedelta(hours=settings.JWT_EXPIRATION_HOURS)
     access_token = create_access_token(
         subject=user.id, expires_delta=access_token_expires
+    )
+
+    # Log LOGIN activity
+    activity_service = ActivityService(db)
+    activity_service.log_activity(
+        user_id=user.id,
+        activity_type=ActivityType.LOGIN.value,
+        description=f"User logged in: {user.email}",
+        entity_id=None
     )
 
     return Token(

@@ -32,6 +32,8 @@ from app.services.pdf_analysis_service import (
     InvalidPDFError,
     NoFormFieldsError
 )
+from app.services.activity_service import ActivityService
+from app.schemas.activity import ActivityType
 
 
 logger = logging.getLogger(__name__)
@@ -271,6 +273,15 @@ async def ingest_template(
 
         logger.info(
             f"Template ingestion successful: template_id={template.id}"
+        )
+
+        # Log TEMPLATE_SAVED activity
+        activity_service = ActivityService(db)
+        activity_service.log_activity(
+            user_id=int(current_user.id),
+            activity_type=ActivityType.TEMPLATE_SAVED.value,
+            description=f"Template ingested: '{name}' v{version} by {current_user.email}",
+            entity_id=template.id
         )
 
         # Calculate checksum (should come from service)
@@ -617,6 +628,15 @@ async def ingest_template_version(
         logger.info(
             f"Version ingestion successful: version_id={version_record.id}, "
             f"template_id={template_id}"
+        )
+
+        # Log VERSION_SAVED activity
+        activity_service = ActivityService(db)
+        activity_service.log_activity(
+            user_id=int(current_user.id),
+            activity_type=ActivityType.VERSION_SAVED.value,
+            description=f"New template version ingested: v{version} for template {template_id} by {current_user.email}",
+            entity_id=version_record.id
         )
 
         # Return success response

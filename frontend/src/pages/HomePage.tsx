@@ -1,8 +1,36 @@
 import { BarChart3, FileText, GitCompare, Upload } from 'lucide-react'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { activityService } from '../services/activity.service'
+import type { Activity } from '../types/activity.types'
 
 const HomePage: React.FC = () => {
+  // Activity state
+  const [activities, setActivities] = useState<Activity[]>([])
+  const [activitiesLoading, setActivitiesLoading] = useState(true)
+  const [activitiesError, setActivitiesError] = useState<string | null>(null)
+
+  // Fetch activities on component mount
+  useEffect(() => {
+    const fetchActivities = async () => {
+      try {
+        setActivitiesLoading(true)
+        setActivitiesError(null)
+        const response = await activityService.getRecentActivities({ limit: 10 })
+        setActivities(response.items)
+      } catch (error) {
+        console.error('Failed to load activities:', error)
+        setActivitiesError(
+          error instanceof Error ? error.message : 'Failed to load recent activities'
+        )
+      } finally {
+        setActivitiesLoading(false)
+      }
+    }
+
+    fetchActivities()
+  }, [])
+
   const stats = [
     {
       label: 'Total Templates',
@@ -70,7 +98,7 @@ const HomePage: React.FC = () => {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Link
-            to="/templates/upload"
+            to="/analyze"
             className="flex items-center space-x-3 p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           >
             <Upload className="w-5 h-5 text-primary-600" />
@@ -106,35 +134,73 @@ const HomePage: React.FC = () => {
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Recent Activity
         </h2>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span className="text-sm text-gray-600 dark:text-gray-300">
-                Template "SEPE Form 2024-v2" uploaded
-              </span>
-            </div>
-            <span className="text-xs text-gray-400">2 hours ago</span>
+
+        {/* Loading State */}
+        {activitiesLoading && (
+          <div className="space-y-3" role="status" aria-label="Loading activities">
+            {[...Array(3)].map((_, index) => (
+              <div key={index} className="flex items-center justify-between py-2 animate-pulse">
+                <div className="flex items-center space-x-3 flex-1">
+                  <div className="w-2 h-2 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+                  <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-3/4"></div>
+                </div>
+                <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-16"></div>
+              </div>
+            ))}
           </div>
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center space-x-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <span className="text-sm text-gray-600 dark:text-gray-300">
-                Comparison completed: v1 vs v2
-              </span>
+        )}
+
+        {/* Error State */}
+        {!activitiesLoading && activitiesError && (
+          <div 
+            className="flex items-center justify-center py-8 text-center"
+            role="alert"
+            aria-live="polite"
+          >
+            <div className="text-sm text-red-600 dark:text-red-400">
+              <p className="font-medium mb-1">Unable to load recent activities</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{activitiesError}</p>
             </div>
-            <span className="text-xs text-gray-400">4 hours ago</span>
           </div>
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center space-x-3">
-              <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-              <span className="text-sm text-gray-600 dark:text-gray-300">
-                New template version detected
-              </span>
-            </div>
-            <span className="text-xs text-gray-400">1 day ago</span>
+        )}
+
+        {/* Empty State */}
+        {!activitiesLoading && !activitiesError && activities.length === 0 && (
+          <div 
+            className="flex items-center justify-center py-8 text-center"
+            role="status"
+          >
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              No recent activity to display
+            </p>
           </div>
-        </div>
+        )}
+
+        {/* Activities List */}
+        {!activitiesLoading && !activitiesError && activities.length > 0 && (
+          <div className="space-y-3" role="list" aria-label="Recent activities">
+            {activities.map((activity) => (
+              <div 
+                key={activity.id} 
+                className="flex items-center justify-between py-2"
+                role="listitem"
+              >
+                <div className="flex items-center space-x-3">
+                  <div 
+                    className={`w-2 h-2 ${activityService.getActivityColor(activity.activity_type)} rounded-full`}
+                    aria-hidden="true"
+                  ></div>
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
+                    {activity.description}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400" title={activity.timestamp}>
+                  {activityService.formatRelativeTime(activity.timestamp)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
