@@ -1,4 +1,4 @@
-# Spec:
+## METAPROMPT LLM GEMINI
 
 \#\# FEATURE: IMPLEMENTAR FUNCIONALIDAD “RECENT ACTIVITY”  
  Gemini como Arquitecto de Producto refina este prompt para /create-spec de agent-os.  
@@ -19,7 +19,7 @@ La especificación describe la funcionalidad “Recent Activity” que existe en
 
 \*\*corrige/completa la especificación si es necesario\*\*
 
-## RESPUESTA DE GIMINI
+## RESPUESTA DE GEMINI (prompt refinado)
 
 /create-spec
 Crea la especificación completa para implementar la funcionalidad 'Recent Activity' con una base de datos de auditoría, eliminando el mock actual en el Front-end. El diseño debe garantizar la trazabilidad de los eventos clave.

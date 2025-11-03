@@ -223,3 +223,6 @@ export * from './comparison.types';
 // Activity Types
 export * from './activity.types';
 
+// Metrics Types
+export * from './metrics.types';
+

@@ -2,13 +2,41 @@ import { BarChart3, FileText, GitCompare, Upload } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { activityService } from '../services/activity.service'
+import { metricsService } from '../services/metrics.service'
 import type { Activity } from '../types/activity.types'
+import type { DashboardMetrics } from '../types/metrics.types'
 
 const HomePage: React.FC = () => {
+  // Metrics state
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(true)
+  const [metricsError, setMetricsError] = useState<string | null>(null)
+
   // Activity state
   const [activities, setActivities] = useState<Activity[]>([])
   const [activitiesLoading, setActivitiesLoading] = useState(true)
   const [activitiesError, setActivitiesError] = useState<string | null>(null)
+
+  // Fetch metrics on component mount
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        setMetricsLoading(true)
+        setMetricsError(null)
+        const data = await metricsService.getAllMetrics()
+        setMetrics(data)
+      } catch (error) {
+        console.error('Failed to load metrics:', error)
+        setMetricsError(
+          error instanceof Error ? error.message : 'Failed to load metrics'
+        )
+      } finally {
+        setMetricsLoading(false)
+      }
+    }
+
+    fetchMetrics()
+  }, [])
 
   // Fetch activities on component mount
   useEffect(() => {
@@ -31,30 +59,6 @@ const HomePage: React.FC = () => {
     fetchActivities()
   }, [])
 
-  const stats = [
-    {
-      label: 'Total Templates',
-      value: '24',
-      icon: FileText,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
-    },
-    {
-      label: 'Active Comparisons',
-      value: '8',
-      icon: GitCompare,
-      color: 'text-green-600',
-      bgColor: 'bg-green-100',
-    },
-    {
-      label: 'This Month',
-      value: '12',
-      icon: BarChart3,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
-    },
-  ]
-
   return (
     <div className="space-y-6">
       {/* Welcome Header */}
@@ -69,26 +73,80 @@ const HomePage: React.FC = () => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {stats.map((stat, index) => (
-          <div
-            key={index}
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6"
-          >
-            <div className="flex items-center">
-              <div className={`${stat.bgColor} p-3 rounded-lg`}>
-                <stat.icon className={`w-6 h-6 ${stat.color}`} />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {stat.label}
+        {/* Total Templates */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <div className="flex items-center">
+            <div className="bg-blue-100 dark:bg-blue-900/20 p-3 rounded-lg">
+              <FileText className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="ml-4 flex-1">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Total Templates
+              </p>
+              {metricsLoading ? (
+                <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-24 animate-pulse mt-1"></div>
+              ) : metricsError ? (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1" title={metricsError}>
+                  Error
                 </p>
+              ) : metrics ? (
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {stat.value}
+                  {metrics.templates.total_versions} <span className="text-sm text-gray-500">versions of</span> {metrics.templates.total_templates} <span className="text-sm text-gray-500">templates</span>
                 </p>
-              </div>
+              ) : null}
             </div>
           </div>
-        ))}
+        </div>
+
+        {/* Active Comparisons */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <div className="flex items-center">
+            <div className="bg-green-100 dark:bg-green-900/20 p-3 rounded-lg">
+              <GitCompare className="w-6 h-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div className="ml-4 flex-1">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Active Comparisons
+              </p>
+              {metricsLoading ? (
+                <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-16 animate-pulse mt-1"></div>
+              ) : metricsError ? (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1" title={metricsError}>
+                  Error
+                </p>
+              ) : metrics ? (
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  {metrics.comparisons.total_comparisons}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* This Month */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
+          <div className="flex items-center">
+            <div className="bg-purple-100 dark:bg-purple-900/20 p-3 rounded-lg">
+              <BarChart3 className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div className="ml-4 flex-1">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                This Month
+              </p>
+              {metricsLoading ? (
+                <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-16 animate-pulse mt-1"></div>
+              ) : metricsError ? (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1" title={metricsError}>
+                  Error
+                </p>
+              ) : metrics ? (
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  {metrics.activity.activities_this_month}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Quick Actions */}
