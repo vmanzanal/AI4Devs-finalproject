@@ -81,6 +81,20 @@ export const handleResponse = async (
 };
 
 /**
+ * Gets authorization headers with JWT token if available
+ * @returns Headers object with Authorization header
+ */
+const getAuthHeaders = (): HeadersInit => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    return {
+      'Authorization': `Bearer ${token}`
+    };
+  }
+  return {};
+};
+
+/**
  * Analyzes a PDF template using the backend API
  * @param file - PDF file to analyze
  * @returns Promise resolving to analysis results
@@ -92,6 +106,7 @@ export const analyzePDFTemplate = async (file: File): Promise<AnalysisResponse> 
 
   const response = await fetch(DEFAULT_ANALYZER_CONFIG.apiEndpoint, {
     method: "POST",
+    headers: getAuthHeaders(),
     body: formData,
   });
 
@@ -159,6 +174,13 @@ export const uploadWithProgress = async (
     // Configure and send request
     xhr.open("POST", DEFAULT_ANALYZER_CONFIG.apiEndpoint);
     xhr.timeout = DEFAULT_ANALYZER_CONFIG.timeout;
+    
+    // Add authorization header if token exists
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+    
     xhr.send(formData);
   });
 };
@@ -170,6 +192,14 @@ export const uploadWithProgress = async (
  */
 export const handleAnalysisError = (error: unknown): string => {
   if (error instanceof AnalysisError) {
+    // Handle authentication errors
+    if (error.statusCode === 401) {
+      return "Not authenticated. Please log in and try again.";
+    }
+    if (error.statusCode === 403) {
+      return "Access forbidden. You don't have permission to analyze templates.";
+    }
+
     switch (error.errorCode) {
       case "invalid_file_format":
         return "Please upload a valid PDF file.";
