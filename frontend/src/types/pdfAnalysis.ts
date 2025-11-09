@@ -64,7 +64,7 @@ export interface TemplateAnalyzePageProps {
 
 // File upload component props
 export interface FileUploadZoneProps {
-  onFileSelect: (file: File) => void;
+  onFileSelect: (file: File | null) => void;
   onAnalyze: () => void;
   selectedFile: File | null;
   uploadState: UploadState;
@@ -199,6 +199,6 @@ export const DEFAULT_ANALYZER_CONFIG: AnalyzerConfig = {
   maxFileSize: 10 * 1024 * 1024, // 10MB
   allowedExtensions: ['.pdf'],
   apiEndpoint: '/api/v1/templates/analyze',
-  timeout: 30000, // 30 seconds
-  retryAttempts: 3,
+  timeout: 60000, // 60 seconds - increased for large PDF analysis
+  retryAttempts: 1, // No retries for PDF analysis (it's expensive)
 };

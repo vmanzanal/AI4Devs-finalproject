@@ -65,6 +65,12 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
     fileInputRef.current?.click();
   }, [disabled, uploadState]);
 
+  // Handle button click (prevents event propagation to parent div)
+  const handleButtonClick = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent double-opening of file dialog
+    handleClick();
+  }, [handleClick]);
+
   // Handle file drop
   const handleFileDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
@@ -185,7 +191,8 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         "border-green-500",
         "bg-green-50",
         "dark:bg-green-900/20",
-        "dark:border-green-400"
+        "dark:border-green-400",
+        "cursor-default" // Not clickable when analysis is complete
       );
     } else if (dragState.isDragOver && !disabled) {
       baseClasses.push(
@@ -377,7 +384,7 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         <div className="mt-4">
           <button
             type="button"
-            onClick={handleClick}
+            onClick={handleButtonClick}
             disabled={disabled}
             tabIndex={0}
             className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-100 rounded-md hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed dark:text-blue-400 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 transition-colors"
@@ -399,22 +406,24 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
       <div
         ref={uploadZoneRef}
         data-testid="file-upload-zone"
-        role="button"
-        tabIndex={disabled ? -1 : 0}
+        role={uploadState === "success" ? "status" : "button"}
+        tabIndex={disabled || uploadState === "success" ? -1 : 0}
         aria-label={
-          selectedFile
+          uploadState === "success"
+            ? "Analysis completed successfully"
+            : selectedFile
             ? `Selected file: ${selectedFile.name}. Press Enter to analyze, Escape to remove.`
             : "Upload PDF file. Drag and drop or click to browse."
         }
         aria-describedby="upload-instructions"
-        aria-disabled={disabled || uploadState === "uploading" || uploadState === "processing"}
+        aria-disabled={disabled || uploadState === "uploading" || uploadState === "processing" || uploadState === "success"}
         className={`${getStateClasses()} ${className}`}
-        onClick={handleClick}
-        onDragEnter={disabled ? undefined : handleDragEnter}
-        onDragLeave={disabled ? undefined : handleDragLeave}
-        onDragOver={disabled ? undefined : handleDragOver}
-        onDrop={disabled ? undefined : handleFileDrop}
-        onKeyDown={disabled ? undefined : handleKeyPress}
+        onClick={uploadState === "success" ? undefined : handleClick}
+        onDragEnter={disabled || uploadState === "success" ? undefined : handleDragEnter}
+        onDragLeave={disabled || uploadState === "success" ? undefined : handleDragLeave}
+        onDragOver={disabled || uploadState === "success" ? undefined : handleDragOver}
+        onDrop={disabled || uploadState === "success" ? undefined : handleFileDrop}
+        onKeyDown={disabled || uploadState === "success" ? undefined : handleKeyPress}
       >
         {renderUploadStateContent()}
 

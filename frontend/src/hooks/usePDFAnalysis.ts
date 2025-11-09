@@ -4,19 +4,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-    analyzePDFWithRetry,
-    handleAnalysisError,
-    validatePDFFile,
+  analyzePDFWithRetry,
+  handleAnalysisError,
+  validatePDFFile,
 } from "../services/pdfAnalysisService";
 import { templateService } from "../services/templateService";
 import type {
-    AnalysisMetadata,
-    AnalyzePageState,
-    DragState,
-    ProgressCallback,
-    ResponsiveBreakpoints,
-    TemplateField,
-    UseAnalyzePageState
+  AnalysisMetadata,
+  AnalyzePageState,
+  DragState,
+  ProgressCallback,
+  ResponsiveBreakpoints,
+  TemplateField,
+  UseAnalyzePageState
 } from "../types/pdfAnalysis";
 
 /**
@@ -45,7 +45,20 @@ export const useAnalyzePageState = (): UseAnalyzePageState => {
     setState((prev) => ({ ...prev, ...updates }));
   }, []);
 
-  const handleFileSelect = useCallback((file: File) => {
+  const handleFileSelect = useCallback((file: File | null) => {
+    // If null, clear the selected file (user clicked 'X' button)
+    if (file === null) {
+      updateState({
+        selectedFile: null,
+        uploadState: "idle",
+        error: null,
+        analysisResults: null,
+        metadata: null,
+      });
+      return;
+    }
+
+    // Validate the file
     const validation = validatePDFFile(file);
 
     if (!validation.isValid) {
