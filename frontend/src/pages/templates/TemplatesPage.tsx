@@ -26,6 +26,7 @@ import TablePagination from '../../components/templates/TablePagination';
 import TemplateFieldsModal from '../../components/templates/TemplateFieldsModal';
 import TemplatesTable from '../../components/templates/TemplatesTable';
 import VersionHistoryModal from '../../components/templates/VersionHistoryModal';
+import { DeleteConfirmationModal } from '../../components/ui';
 import { useTemplateFields } from '../../hooks/useTemplateFields';
 import { useTemplates } from '../../hooks/useTemplates';
 import { useTemplateVersions } from '../../hooks/useTemplateVersions';
@@ -57,6 +58,7 @@ const TemplatesPage: React.FC = () => {
     handleSort,
     search,
     setSearch,
+    refetch, // Add refetch method
   } = useTemplates();
 
   // Version history modal data
@@ -94,6 +96,24 @@ const TemplatesPage: React.FC = () => {
   // Local state for modals
   const [selectedTemplateName, setSelectedTemplateName] = useState('');
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  
+  // Delete confirmation modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<{ id: number; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  
+  // Delete version modal state
+  const [deleteVersionModalOpen, setDeleteVersionModalOpen] = useState(false);
+  const [versionToDelete, setVersionToDelete] = useState<{ 
+    templateId: number; 
+    versionId: number; 
+    versionNumber: string;
+  } | null>(null);
+  const [isDeletingVersion, setIsDeletingVersion] = useState(false);
+  const [deleteVersionSuccess, setDeleteVersionSuccess] = useState<string | null>(null);
+  const [deleteVersionError, setDeleteVersionError] = useState<string | null>(null);
 
   /**
    * Handle template download
@@ -152,6 +172,117 @@ const TemplatesPage: React.FC = () => {
     setSelectedTemplateName('');
   };
 
+  /**
+   * Handle delete button click - open confirmation modal
+   */
+  const handleDeleteClick = (templateId: number, templateName: string) => {
+    setTemplateToDelete({ id: templateId, name: templateName });
+    setDeleteModalOpen(true);
+    setDeleteError(null);
+    setDeleteSuccess(null);
+  };
+
+  /**
+   * Handle delete confirmation - perform actual deletion
+   */
+  const handleDeleteConfirm = async () => {
+    if (!templateToDelete) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      await templatesService.deleteTemplate(templateToDelete.id);
+      
+      // Show success message
+      setDeleteSuccess(`Template "${templateToDelete.name}" deleted successfully`);
+      
+      // Close modal
+      setDeleteModalOpen(false);
+      setTemplateToDelete(null);
+      
+      // Refresh templates list (re-fetch current page)
+      window.location.reload();
+      
+      // Auto-clear success message after 5 seconds
+      setTimeout(() => setDeleteSuccess(null), 5000);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to delete template';
+      setDeleteError(errorMessage);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  /**
+   * Handle closing delete confirmation modal
+   */
+  const handleDeleteCancel = () => {
+    if (!isDeleting) {
+      setDeleteModalOpen(false);
+      setTemplateToDelete(null);
+      setDeleteError(null);
+    }
+  };
+
+  /**
+   * Handle delete version button click - open confirmation modal
+   */
+  const handleDeleteVersionClick = (templateId: number, versionId: number, versionNumber: string) => {
+    setVersionToDelete({ templateId, versionId, versionNumber });
+    setDeleteVersionModalOpen(true);
+    setDeleteVersionError(null);
+    setDeleteVersionSuccess(null);
+  };
+
+  /**
+   * Handle delete version confirmation - perform actual deletion
+   */
+  const handleDeleteVersionConfirm = async () => {
+    if (!versionToDelete) return;
+
+    setIsDeletingVersion(true);
+    setDeleteVersionError(null);
+
+    try {
+      await templatesService.deleteVersion(versionToDelete.templateId, versionToDelete.versionId);
+      
+      // Show success message
+      setDeleteVersionSuccess(`Versión ${versionToDelete.versionNumber} eliminada correctamente`);
+      
+      // Close delete confirmation modal
+      setDeleteVersionModalOpen(false);
+      setVersionToDelete(null);
+      
+      // Close version history modal to show success message
+      handleCloseVersionsModal();
+      
+      // Refresh main templates list
+      refetch();
+      
+      // Auto-clear success message after 5 seconds
+      setTimeout(() => setDeleteVersionSuccess(null), 5000);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to delete version';
+      setDeleteVersionError(errorMessage);
+    } finally {
+      setIsDeletingVersion(false);
+    }
+  };
+
+  /**
+   * Handle closing delete version confirmation modal
+   */
+  const handleDeleteVersionCancel = () => {
+    if (!isDeletingVersion) {
+      setDeleteVersionModalOpen(false);
+      setVersionToDelete(null);
+      setDeleteVersionError(null);
+    }
+  };
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -160,6 +291,26 @@ const TemplatesPage: React.FC = () => {
           Templates
         </h1>
       </div>
+
+      {/* Success notification */}
+      {deleteSuccess && (
+        <div
+          className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4"
+          role="alert"
+        >
+          <p className="text-green-800 dark:text-green-200">{deleteSuccess}</p>
+        </div>
+      )}
+
+      {/* Version delete success notification */}
+      {deleteVersionSuccess && (
+        <div
+          className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4"
+          role="alert"
+        >
+          <p className="text-green-800 dark:text-green-200">{deleteVersionSuccess}</p>
+        </div>
+      )}
 
       {/* Download error toast */}
       {downloadError && (
@@ -205,6 +356,7 @@ const TemplatesPage: React.FC = () => {
               onDownload={handleDownload}
               onViewVersions={handleViewVersions}
               onViewFields={handleViewFields}
+              onDelete={handleDeleteClick}
             />
           </div>
 
@@ -227,12 +379,14 @@ const TemplatesPage: React.FC = () => {
         isOpen={versionsTemplateId !== null}
         onClose={handleCloseVersionsModal}
         templateName={selectedTemplateName}
+        templateId={versionsTemplateId}
         versions={versions}
         isLoading={versionsLoading}
         error={versionsError}
         currentPage={versionsCurrentPage}
         totalPages={versionsTotalPages}
         onPageChange={setVersionsPage}
+        onDeleteVersion={handleDeleteVersionClick}
       />
 
       {/* Template Fields Modal */}
@@ -253,6 +407,64 @@ const TemplatesPage: React.FC = () => {
         onPageNumberFilter={setFieldsPageNumber}
         onClearPageFilter={clearFieldsPageNumber}
       />
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Eliminar Plantilla"
+        message={`¿Estás seguro de que deseas eliminar la plantilla "${templateToDelete?.name}"?`}
+        details="Esta acción eliminará permanentemente todas las versiones, campos y comparaciones asociadas a esta plantilla."
+        isLoading={isDeleting}
+      />
+
+      {/* Delete Error Modal (shown inside delete modal) */}
+      {deleteError && deleteModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md">
+            <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
+              Error al eliminar
+            </h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">{deleteError}</p>
+            <button
+              onClick={() => setDeleteError(null)}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Version Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteVersionModalOpen}
+        onClose={handleDeleteVersionCancel}
+        onConfirm={handleDeleteVersionConfirm}
+        title="Eliminar Versión"
+        message={`¿Estás seguro de que deseas eliminar la versión ${versionToDelete?.versionNumber}?`}
+        details="Esta acción eliminará permanentemente la versión, sus campos y todas las comparaciones que la utilicen."
+        isLoading={isDeletingVersion}
+      />
+
+      {/* Delete Version Error Modal */}
+      {deleteVersionError && deleteVersionModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md">
+            <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
+              Error al eliminar versión
+            </h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">{deleteVersionError}</p>
+            <button
+              onClick={() => setDeleteVersionError(null)}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

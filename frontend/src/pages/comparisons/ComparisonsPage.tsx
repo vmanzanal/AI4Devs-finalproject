@@ -18,18 +18,21 @@
  */
 
 import {
-    ArrowDown,
-    ArrowUp,
-    ArrowUpDown,
-    ChevronLeft,
-    ChevronRight,
-    Eye,
-    Plus,
-    Search
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Plus,
+  Search,
+  Trash2
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { DeleteConfirmationModal } from '../../components/ui';
 import { comparisonsService } from '../../services/comparisons.service';
+import { templatesService } from '../../services/templates.service';
 import type { ComparisonSummary, ListComparisonsParams } from '../../types/comparison.types';
 
 /**
@@ -64,6 +67,13 @@ const ComparisonsPage: React.FC = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+
+  // Delete confirmation modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [comparisonToDelete, setComparisonToDelete] = useState<{ id: number; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   /**
    * Debounce search term
@@ -144,6 +154,60 @@ const ComparisonsPage: React.FC = () => {
    */
   const handleRowClick = (comparisonId: number) => {
     navigate(`/comparisons/results/${comparisonId}`);
+  };
+
+  /**
+   * Handle delete button click - open confirmation modal
+   */
+  const handleDeleteClick = (comparisonId: number, comparisonName: string) => {
+    setComparisonToDelete({ id: comparisonId, name: comparisonName });
+    setDeleteModalOpen(true);
+    setDeleteError(null);
+    setDeleteSuccess(null);
+  };
+
+  /**
+   * Handle delete confirmation - perform actual deletion
+   */
+  const handleDeleteConfirm = async () => {
+    if (!comparisonToDelete) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      await templatesService.deleteComparison(comparisonToDelete.id);
+      
+      // Show success message
+      setDeleteSuccess(`Comparison deleted successfully`);
+      
+      // Close modal
+      setDeleteModalOpen(false);
+      setComparisonToDelete(null);
+      
+      // Refresh comparisons list
+      await fetchComparisons();
+      
+      // Auto-clear success message after 5 seconds
+      setTimeout(() => setDeleteSuccess(null), 5000);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to delete comparison';
+      setDeleteError(errorMessage);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  /**
+   * Handle closing delete confirmation modal
+   */
+  const handleDeleteCancel = () => {
+    if (!isDeleting) {
+      setDeleteModalOpen(false);
+      setComparisonToDelete(null);
+      setDeleteError(null);
+    }
   };
 
   /**
@@ -261,6 +325,16 @@ const ComparisonsPage: React.FC = () => {
           <span>New Comparison</span>
         </button>
       </div>
+
+      {/* Success notification */}
+      {deleteSuccess && (
+        <div
+          className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4"
+          role="alert"
+        >
+          <p className="text-green-800 dark:text-green-200">{deleteSuccess}</p>
+        </div>
+      )}
 
       {/* Search and Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
@@ -455,18 +529,35 @@ const ComparisonsPage: React.FC = () => {
                       {formatDate(comparison.created_at)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRowClick(comparison.id);
-                        }}
-                        className="inline-flex items-center gap-1 text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
-                        aria-label={`View comparison ${comparison.id}`}
-                      >
-                        <Eye className="w-4 h-4" aria-hidden="true" />
-                        <span>View</span>
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRowClick(comparison.id);
+                          }}
+                          className="inline-flex items-center gap-1 p-2 text-primary-600 hover:text-primary-900 hover:bg-primary-50 dark:text-primary-400 dark:hover:text-primary-300 dark:hover:bg-primary-900/20 rounded transition-colors"
+                          aria-label={`View comparison ${comparison.id}`}
+                          title="View comparison"
+                        >
+                          <Eye className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(
+                              comparison.id,
+                              `${comparison.source_template_name} v${comparison.source_version_number} → ${comparison.target_template_name} v${comparison.target_version_number}`
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20 rounded transition-colors"
+                          aria-label={`Delete comparison ${comparison.id}`}
+                          title="Delete comparison"
+                        >
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -527,6 +618,35 @@ const ComparisonsPage: React.FC = () => {
               aria-label="Next page"
             >
               <ChevronRight className="w-5 h-5" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Eliminar Comparación"
+        message={`¿Estás seguro de que deseas eliminar esta comparación?`}
+        details="Esta acción eliminará permanentemente la comparación y todos sus datos asociados. Las plantillas comparadas no serán eliminadas."
+        isLoading={isDeleting}
+      />
+
+      {/* Delete Error Modal (shown inside delete modal) */}
+      {deleteError && deleteModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md">
+            <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
+              Error al eliminar
+            </h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">{deleteError}</p>
+            <button
+              onClick={() => setDeleteError(null)}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+            >
+              Cerrar
             </button>
           </div>
         </div>

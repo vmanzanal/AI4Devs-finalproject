@@ -5,6 +5,7 @@
  * - Download PDF button
  * - View version history button
  * - View form fields button
+ * - Delete template button
  *
  * Features:
  * - Icon-only buttons with tooltips
@@ -16,7 +17,7 @@
  * @date 2025-10-25
  */
 
-import { Download, FileText, History } from 'lucide-react';
+import { Download, FileText, History, Trash2 } from 'lucide-react';
 import React from 'react';
 
 /**
@@ -33,6 +34,8 @@ export interface TemplateActionsMenuProps {
   onViewVersions: (templateId: number) => void;
   /** Callback when view fields action is triggered */
   onViewFields: (templateId: number) => void;
+  /** Callback when delete action is triggered */
+  onDelete: (templateId: number, templateName: string) => void;
   /** Additional CSS classes */
   className?: string;
 }
@@ -57,6 +60,7 @@ const TemplateActionsMenu: React.FC<TemplateActionsMenuProps> = ({
   onDownload,
   onViewVersions,
   onViewFields,
+  onDelete,
   className = '',
 }) => {
   const handleDownload = () => {
@@ -69,6 +73,10 @@ const TemplateActionsMenu: React.FC<TemplateActionsMenuProps> = ({
 
   const handleViewFields = () => {
     onViewFields(templateId);
+  };
+
+  const handleDelete = () => {
+    onDelete(templateId, templateName);
   };
 
   return (
@@ -101,6 +109,16 @@ const TemplateActionsMenu: React.FC<TemplateActionsMenuProps> = ({
         className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/20 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
       >
         <FileText size={18} />
+      </button>
+
+      <button
+        onClick={handleDelete}
+        aria-label="Delete template"
+        title="Delete template"
+        type="button"
+        className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
+      >
+        <Trash2 size={18} />
       </button>
     </div>
   );

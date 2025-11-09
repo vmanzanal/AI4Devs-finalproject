@@ -14,7 +14,7 @@
  * @date 2025-10-25
  */
 
-import { CheckCircle, Clock, Loader2, User, X } from 'lucide-react';
+import { CheckCircle, Clock, Loader2, Trash2, User, X } from 'lucide-react';
 import React, { useEffect, useRef } from 'react';
 import type { TemplateVersion } from '../../types/templates.types';
 import { formatDate } from '../../utils/formatters';
@@ -30,6 +30,8 @@ export interface VersionHistoryModalProps {
   onClose: () => void;
   /** Template name to display in title */
   templateName: string;
+  /** Template ID for delete operations */
+  templateId: number | null;
   /** Array of versions to display */
   versions: TemplateVersion[];
   /** Whether versions are loading */
@@ -42,6 +44,8 @@ export interface VersionHistoryModalProps {
   totalPages: number;
   /** Callback when page changes */
   onPageChange: (page: number) => void;
+  /** Callback when delete version is requested */
+  onDeleteVersion?: (templateId: number, versionId: number, versionNumber: string) => void;
 }
 
 /**
@@ -66,12 +70,14 @@ const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   isOpen,
   onClose,
   templateName,
+  templateId,
   versions,
   isLoading,
   error,
   currentPage,
   totalPages,
   onPageChange,
+  onDeleteVersion,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -209,6 +215,33 @@ const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                           </span>
                         )}
                       </div>
+                      
+                      {/* Delete button */}
+                      {onDeleteVersion && templateId && (
+                        <div>
+                          {version.is_current ? (
+                            <button
+                              type="button"
+                              disabled
+                              title="Cannot delete current version"
+                              className="p-2 text-gray-300 dark:text-gray-600 cursor-not-allowed rounded"
+                              aria-label="Cannot delete current version"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteVersion(templateId, version.id, version.version_number)}
+                              title="Delete version"
+                              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
+                              aria-label={`Delete version ${version.version_number}`}
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 text-sm">

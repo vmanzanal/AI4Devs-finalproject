@@ -41,6 +41,8 @@ export interface TemplatesTableProps {
   onViewVersions: (templateId: number) => void;
   /** Callback when view fields is requested */
   onViewFields: (templateId: number) => void;
+  /** Callback when delete is requested */
+  onDelete: (templateId: number, templateName: string) => void;
   /** Additional CSS classes */
   className?: string;
 }
@@ -113,6 +115,7 @@ const TemplatesTable: React.FC<TemplatesTableProps> = ({
   onDownload,
   onViewVersions,
   onViewFields,
+  onDelete,
   className = '',
 }) => {
   // Show loading state
@@ -221,6 +224,7 @@ const TemplatesTable: React.FC<TemplatesTableProps> = ({
                   onDownload={onDownload}
                   onViewVersions={onViewVersions}
                   onViewFields={onViewFields}
+                  onDelete={onDelete}
                 />
               </td>
             </tr>

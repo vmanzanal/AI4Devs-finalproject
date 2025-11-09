@@ -108,12 +108,17 @@ class ApiService {
     return response.data.data || response.data
   }
 
-  // File upload method
-  async upload<T = any>(url: string, formData: FormData): Promise<T> {
+  // File upload method with configurable timeout
+  async upload<T = any>(
+    url: string, 
+    formData: FormData, 
+    options?: { timeout?: number }
+  ): Promise<T> {
     const response = await this.api.post(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      timeout: options?.timeout || 30000, // Default 30s, but allow override
     })
     return response.data.data || response.data
   }

@@ -103,9 +103,11 @@ class TemplateService {
     // - Sets Content-Type to multipart/form-data
     // - Handles 401 errors by redirecting to login
     // - Parses error responses into Error objects
+    // Use 60 second timeout for PDF ingestion (analysis can take time)
     return apiService.upload<TemplateIngestResponse>(
       '/templates/ingest',
-      formData
+      formData,
+      { timeout: 60000 } // 60 seconds for PDF analysis and ingestion
     );
   }
 }

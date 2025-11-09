@@ -17,7 +17,10 @@ export type ActivityType =
   | 'TEMPLATE_SAVED'
   | 'VERSION_SAVED'
   | 'COMPARISON_ANALYSIS'
-  | 'COMPARISON_SAVED';
+  | 'COMPARISON_SAVED'
+  | 'TEMPLATE_DELETED'
+  | 'VERSION_DELETED'
+  | 'COMPARISON_DELETED';
 
 /**
  * Individual activity record with user attribution.
@@ -77,6 +80,9 @@ export const ACTIVITY_COLORS: Record<ActivityType, string> = {
   VERSION_SAVED: 'bg-green-500',
   COMPARISON_ANALYSIS: 'bg-blue-500',
   COMPARISON_SAVED: 'bg-blue-500',
+  TEMPLATE_DELETED: 'bg-red-500',
+  VERSION_DELETED: 'bg-red-500',
+  COMPARISON_DELETED: 'bg-red-500',
 };
 
 /**
@@ -92,5 +98,8 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   VERSION_SAVED: 'Version Saved',
   COMPARISON_ANALYSIS: 'Comparison Analysis',
   COMPARISON_SAVED: 'Comparison Saved',
+  TEMPLATE_DELETED: 'Template Deleted',
+  VERSION_DELETED: 'Version Deleted',
+  COMPARISON_DELETED: 'Comparison Deleted',
 };
 

@@ -92,7 +92,10 @@ class TemplateVersion(Base):
 
     # Foreign Key
     template_id = Column(
-        Integer, ForeignKey("pdf_templates.id"), nullable=False, index=True
+        Integer,
+        ForeignKey("pdf_templates.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
     )
 
     # Version Information
@@ -121,15 +124,18 @@ class TemplateVersion(Base):
         "TemplateField", back_populates="version", cascade="all, delete-orphan"
     )
     # Comparison relationships (added for persistence feature)
+    # Using passive_deletes=True to let PostgreSQL CASCADE handle deletion
     source_comparisons = relationship(
         "Comparison",
         foreign_keys="Comparison.source_version_id",
-        back_populates="source_version"
+        back_populates="source_version",
+        passive_deletes=True  # Let DB handle CASCADE, don't UPDATE to NULL
     )
     target_comparisons = relationship(
         "Comparison",
         foreign_keys="Comparison.target_version_id",
-        back_populates="target_version"
+        back_populates="target_version",
+        passive_deletes=True  # Let DB handle CASCADE, don't UPDATE to NULL
     )
 
     def __repr__(self) -> str:
@@ -161,7 +167,10 @@ class TemplateField(Base):
 
     # Foreign Key to template_versions
     version_id = Column(
-        Integer, ForeignKey("template_versions.id"), nullable=False, index=True
+        Integer,
+        ForeignKey("template_versions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
     )
 
     # Field Identification

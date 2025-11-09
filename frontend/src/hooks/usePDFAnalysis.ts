@@ -66,9 +66,19 @@ export const useAnalyzePageState = (): UseAnalyzePageState => {
     });
   }, [updateState]);
 
+  // Track if analysis is in progress to prevent multiple simultaneous calls
+  const isAnalyzingRef = useRef(false);
+
   const handleAnalyze = useCallback(async () => {
     if (!state.selectedFile) return;
+    
+    // Prevent multiple simultaneous analyze calls
+    if (isAnalyzingRef.current) {
+      console.warn('[usePDFAnalysis] Analysis already in progress, ignoring duplicate call');
+      return;
+    }
 
+    isAnalyzingRef.current = true;
     updateState({ uploadState: "uploading", error: null, progress: 0 });
 
     const onProgress: ProgressCallback = (progress) => {
@@ -93,6 +103,8 @@ export const useAnalyzePageState = (): UseAnalyzePageState => {
         error: handleAnalysisError(error),
         progress: 0,
       });
+    } finally {
+      isAnalyzingRef.current = false;
     }
   }, [state.selectedFile, updateState]);
 

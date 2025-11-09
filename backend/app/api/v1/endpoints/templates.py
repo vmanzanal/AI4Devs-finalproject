@@ -672,44 +672,69 @@ def update_template(
 
 @router.delete(
     "/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete Template",
     description="""
-    Permanently delete a template and its associated PDF file.
+    Permanently delete a template and all its associated data and files.
     
     **Authentication Required:** Only the template owner or superuser can delete.
     
-    **Warning:** This action is irreversible. The template record, all versions,
-    fields, and the PDF file will be permanently removed.
+    **Warning:** This action is irreversible. All related data will be permanently removed:
+    - Template record
+    - All versions
+    - All template fields
+    - All comparisons using any version of this template
+    - All physical PDF files
     
-    **Cascade Deletion:** Related records (versions, fields, comparisons) are
-    automatically deleted via database constraints.
+    **Side Effects:**
+    - All template_versions records are deleted (CASCADE)
+    - All template_fields records are deleted (CASCADE)
+    - All comparisons using any version are deleted (CASCADE)
+    - All comparison_fields from affected comparisons are deleted (CASCADE)
+    - All physical PDF files for all versions are removed from file system
+    - Activity log entry is created with type TEMPLATE_DELETED
+    
+    **Returns:**
+    - HTTP 204 No Content on success
+    - HTTP 401 Unauthorized if not authenticated
+    - HTTP 403 Forbidden if user lacks permission
+    - HTTP 404 Not Found if template doesn't exist
+    - HTTP 500 Internal Server Error on failure
     """,
+    responses={
+        204: {"description": "Template successfully deleted"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized to delete this template"},
+        404: {"description": "Template not found"},
+        500: {"description": "Failed to delete template"}
+    },
     tags=["Templates - CRUD"]
 )
 def delete_template(
     template_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
-) -> Any:
+) -> None:
     """
-    Permanently delete a template and its PDF file.
+    Permanently delete a template and all its associated data and files.
     
     Args:
         template_id: Unique template identifier
         current_user: Authenticated user (must be owner or superuser)
         db: Database session
         
-    Returns:
-        dict: Success confirmation message
-        
     Raises:
         HTTPException 404: If template not found
         HTTPException 403: If user lacks permission to delete
         HTTPException 500: If deletion fails
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     template = db.query(PDFTemplate).filter(PDFTemplate.id == template_id).first()
     
     if not template:
+        logger.warning(f"Template {template_id} not found for deletion")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Template not found"
@@ -717,25 +742,69 @@ def delete_template(
     
     # Check permissions (only owner or superuser can delete)
     if template.uploaded_by != current_user.id and not current_user.is_superuser:
+        logger.warning(
+            f"User {current_user.id} attempted to delete template {template_id} "
+            f"owned by user {template.uploaded_by}"
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this template"
         )
     
     try:
-        # Delete all version files from filesystem
-        for version in template.versions:
-            if version.file_path and os.path.exists(version.file_path):
-                os.remove(version.file_path)
+        # Collect file paths and template info before deletion
+        file_paths = [v.file_path for v in template.versions if v.file_path]
+        template_name = template.name
+        version_count = len(template.versions)
         
-        # Delete database record (cascade will delete versions and fields)
+        # Delete database record (CASCADE will delete versions, fields, and comparisons)
         db.delete(template)
         db.commit()
         
-        return {"message": "Template deleted successfully"}
+        logger.info(
+            f"Template {template_id} deleted successfully by user {current_user.id}. "
+            f"Deleted {version_count} versions."
+        )
+        
+        # Delete all physical PDF files
+        files_deleted = 0
+        files_failed = 0
+        for file_path in file_paths:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    files_deleted += 1
+                    logger.info(f"Physical file deleted: {file_path}")
+                except Exception as file_error:
+                    files_failed += 1
+                    logger.error(f"Failed to delete physical file {file_path}: {str(file_error)}")
+            else:
+                logger.warning(f"Physical file not found: {file_path}")
+        
+        logger.info(
+            f"File cleanup for template {template_id}: "
+            f"{files_deleted} deleted, {files_failed} failed, "
+            f"{len(file_paths) - files_deleted - files_failed} not found"
+        )
+        
+        # Log activity
+        activity_service = ActivityService(db)
+        description = f"Template deleted: {template_name} by {current_user.email}"
+        activity_service.log_activity(
+            user_id=current_user.id,
+            activity_type=ActivityType.TEMPLATE_DELETED.value,
+            description=description,
+            entity_id=template_id
+        )
+        
+        return None  # 204 No Content
         
     except Exception as e:
         db.rollback()
+        logger.error(
+            f"Error deleting template {template_id}: {str(e)}",
+            exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete template: {str(e)}"
@@ -925,6 +994,173 @@ def get_template_versions(
         limit=limit,
         offset=offset
     )
+
+
+@router.delete(
+    "/{template_id}/versions/{version_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete Template Version",
+    description="""
+    Delete a specific version of a template.
+    
+    **Authentication Required:** User must be the uploader of the template.
+    
+    **Business Rule:** Cannot delete the current version (is_current=True).
+    If you need to delete the current version, delete the entire template instead.
+    
+    **Side Effects:**
+    - Version record is deleted from database
+    - All template_fields records are automatically deleted (CASCADE)
+    - All comparisons using this version are automatically deleted (CASCADE)
+    - All comparison_fields from affected comparisons are deleted (CASCADE)
+    - Physical PDF file is removed from file system
+    - Activity log entry is created with type VERSION_DELETED
+    
+    **Returns:**
+    - HTTP 204 No Content on success
+    - HTTP 400 Bad Request if trying to delete current version
+    - HTTP 401 Unauthorized if not authenticated
+    - HTTP 403 Forbidden if user is not the uploader
+    - HTTP 404 Not Found if template or version doesn't exist
+    - HTTP 500 Internal Server Error on failure
+    """,
+    responses={
+        204: {"description": "Version successfully deleted"},
+        400: {"description": "Cannot delete current version"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized to delete this template version"},
+        404: {"description": "Template or version not found"},
+        500: {"description": "Failed to delete version"}
+    },
+    tags=["Templates - CRUD"]
+)
+async def delete_template_version(
+    template_id: int,
+    version_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> None:
+    """
+    Delete a specific version of a template.
+    
+    Args:
+        template_id: ID of the template
+        version_id: ID of the version to delete
+        current_user: Authenticated user from JWT token
+        db: Database session
+        
+    Raises:
+        HTTPException: 404 if template or version not found
+        HTTPException: 400 if trying to delete current version
+        HTTPException: 403 if user is not the uploader
+        HTTPException: 500 if deletion fails
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Fetch template
+        template = db.query(PDFTemplate).filter(
+            PDFTemplate.id == template_id
+        ).first()
+        
+        if not template:
+            logger.warning(f"Template {template_id} not found for version deletion")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Template not found"
+            )
+        
+        # Authorization check: user must be the uploader
+        if template.uploaded_by != current_user.id:
+            logger.warning(
+                f"User {current_user.id} attempted to delete version of template "
+                f"{template_id} uploaded by user {template.uploaded_by}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this template version"
+            )
+        
+        # Fetch version and verify it belongs to this template
+        version = db.query(TemplateVersion).filter(
+            TemplateVersion.id == version_id,
+            TemplateVersion.template_id == template_id
+        ).first()
+        
+        if not version:
+            logger.warning(
+                f"Version {version_id} not found or does not belong to template {template_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Version not found or does not belong to this template"
+            )
+        
+        # CRITICAL VALIDATION: Cannot delete current version
+        if version.is_current:
+            logger.warning(
+                f"User {current_user.id} attempted to delete current version "
+                f"{version_id} of template {template_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete current version. Please delete the entire template instead."
+            )
+        
+        # Store file path and version info before deletion
+        file_path = version.file_path
+        version_number = version.version_number
+        template_name = template.name
+        
+        # Delete version (CASCADE will handle template_fields and comparisons)
+        db.delete(version)
+        db.commit()
+        
+        logger.info(
+            f"Version {version_id} of template {template_id} deleted successfully "
+            f"by user {current_user.id}"
+        )
+        
+        # Delete physical PDF file
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.info(f"Physical file deleted: {file_path}")
+            except Exception as file_error:
+                # Log error but don't fail the operation
+                logger.error(f"Failed to delete physical file {file_path}: {str(file_error)}")
+        else:
+            logger.warning(f"Physical file not found or already deleted: {file_path}")
+        
+        # Log activity
+        activity_service = ActivityService(db)
+        description = (
+            f"Version deleted: {template_name} {version_number} by {current_user.email}"
+        )
+        activity_service.log_activity(
+            user_id=current_user.id,
+            activity_type=ActivityType.VERSION_DELETED.value,
+            description=description,
+            entity_id=version_id
+        )
+        
+        return None  # 204 No Content
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Rollback on any error
+        db.rollback()
+        logger.error(
+            f"Error deleting version {version_id} of template {template_id}: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete template version"
+        )
 
 
 @router.post(

@@ -758,3 +758,120 @@ async def list_comparisons(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list comparisons"
         )
+
+
+@router.delete(
+    "/{comparison_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete Comparison",
+    description="""
+    Delete a comparison and all its associated field-level differences.
+    
+    **Authorization:** User must be the creator of the comparison.
+    
+    **Side Effects:**
+    - Comparison record is deleted from database
+    - All comparison_fields records are automatically deleted (CASCADE)
+    - Activity log entry is created with type COMPARISON_DELETED
+    
+    **Returns:**
+    - HTTP 204 No Content on success
+    - HTTP 401 Unauthorized if not authenticated
+    - HTTP 403 Forbidden if user is not the creator
+    - HTTP 404 Not Found if comparison doesn't exist
+    - HTTP 500 Internal Server Error on failure
+    """,
+    responses={
+        204: {"description": "Comparison successfully deleted"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized to delete this comparison"},
+        404: {"description": "Comparison not found"},
+        500: {"description": "Failed to delete comparison"}
+    },
+    tags=["Comparisons"]
+)
+async def delete_comparison(
+    comparison_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> None:
+    """
+    Delete a comparison by ID.
+    
+    Args:
+        comparison_id: ID of the comparison to delete
+        current_user: Authenticated user from JWT token
+        db: Database session
+        
+    Raises:
+        HTTPException: 404 if comparison not found
+        HTTPException: 403 if user is not the creator
+        HTTPException: 500 if deletion fails
+    """
+    try:
+        # Fetch comparison with related data for logging
+        comparison = db.query(Comparison).filter(
+            Comparison.id == comparison_id
+        ).first()
+        
+        if not comparison:
+            logger.warning(f"Comparison {comparison_id} not found for deletion")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Comparison not found"
+            )
+        
+        # Authorization check: user must be the creator
+        if comparison.created_by != current_user.id:
+            logger.warning(
+                f"User {current_user.id} attempted to delete comparison "
+                f"{comparison_id} owned by user {comparison.created_by}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this comparison"
+            )
+        
+        # Get template names and versions for activity log
+        source_template_name = comparison.source_version.template.name
+        source_version = comparison.source_version.version_number
+        target_template_name = comparison.target_version.template.name
+        target_version = comparison.target_version.version_number
+        
+        # Delete comparison (CASCADE will handle comparison_fields)
+        db.delete(comparison)
+        db.commit()
+        
+        logger.info(
+            f"Comparison {comparison_id} deleted successfully by user {current_user.id}"
+        )
+        
+        # Log activity
+        activity_service = ActivityService(db)
+        description = (
+            f"Comparison deleted: {source_template_name} {source_version} "
+            f"vs {target_template_name} {target_version} by {current_user.email}"
+        )
+        activity_service.log_activity(
+            user_id=current_user.id,
+            activity_type=ActivityType.COMPARISON_DELETED.value,
+            description=description,
+            entity_id=comparison_id
+        )
+        
+        return None  # 204 No Content
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Rollback on any error
+        db.rollback()
+        logger.error(
+            f"Error deleting comparison {comparison_id}: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete comparison"
+        )

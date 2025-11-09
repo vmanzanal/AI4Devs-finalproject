@@ -114,18 +114,34 @@ const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   const handleAnalyzeClick = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
+      event.preventDefault(); // Prevent any default behavior
+      
+      // Prevent multiple clicks while uploading/processing
+      if (uploadState === "uploading" || uploadState === "processing") {
+        console.warn('[FileUploadZone] Analyze already in progress, ignoring click');
+        return;
+      }
+      
       onAnalyze();
     },
-    [onAnalyze]
+    [onAnalyze, uploadState]
   );
 
   // Handle retry after error
   const handleRetry = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
+      event.preventDefault(); // Prevent any default behavior
+      
+      // Prevent multiple clicks while uploading/processing
+      if (uploadState === "uploading" || uploadState === "processing") {
+        console.warn('[FileUploadZone] Retry already in progress, ignoring click');
+        return;
+      }
+      
       onAnalyze();
     },
-    [onAnalyze]
+    [onAnalyze, uploadState]
   );
 
   // Reset drag state on disabled change

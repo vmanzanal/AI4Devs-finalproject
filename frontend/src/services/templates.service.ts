@@ -423,9 +423,11 @@ class TemplatesService {
       formData.append('sepe_url', request.sepe_url);
     }
 
+    // Use 60 second timeout for PDF ingestion (analysis can take time)
     return apiService.upload<TemplateVersionIngestResponse>(
       '/templates/ingest/version',
-      formData
+      formData,
+      { timeout: 60000 } // 60 seconds for PDF analysis and ingestion
     );
   }
 
@@ -497,6 +499,140 @@ class TemplatesService {
 
       // Fallback for non-Error objects
       throw new Error('Failed to analyze comparison due to an unknown error');
+    }
+  }
+
+  /**
+   * Delete a template and all its associated data
+   *
+   * Permanently deletes a template including:
+   * - All versions
+   * - All template fields
+   * - All comparisons using any version
+   * - All physical PDF files
+   *
+   * **Warning:** This action is irreversible.
+   *
+   * @param templateId - The ID of the template to delete
+   * @returns Promise that resolves when deletion is complete
+   * @throws Error if template not found, user lacks permission, or deletion fails
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   await templatesService.deleteTemplate(10);
+   *   console.log('Template deleted successfully');
+   * } catch (error) {
+   *   console.error('Failed to delete template:', error.message);
+   * }
+   * ```
+   */
+  async deleteTemplate(templateId: number): Promise<void> {
+    try {
+      await apiService.delete(`/templates/${templateId}`);
+    } catch (error) {
+      if (error instanceof Error) {
+        // Handle specific error cases
+        if (error.message.includes('403') || error.message.toLowerCase().includes('not authorized')) {
+          throw new Error('You do not have permission to delete this template');
+        }
+        if (error.message.includes('404') || error.message.toLowerCase().includes('not found')) {
+          throw new Error('Template not found');
+        }
+        throw new Error(`Failed to delete template: ${error.message}`);
+      }
+      throw new Error('Failed to delete template due to an unknown error');
+    }
+  }
+
+  /**
+   * Delete a specific version of a template
+   *
+   * Deletes a template version including:
+   * - Version record
+   * - All template fields for that version
+   * - All comparisons using that version
+   * - Physical PDF file
+   *
+   * **Business Rule:** Cannot delete the current version (is_current=True).
+   * If you need to delete the current version, delete the entire template instead.
+   *
+   * @param templateId - The ID of the template
+   * @param versionId - The ID of the version to delete
+   * @returns Promise that resolves when deletion is complete
+   * @throws Error if trying to delete current version, not found, lacks permission, or fails
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   await templatesService.deleteVersion(10, 23);
+   *   console.log('Version deleted successfully');
+   * } catch (error) {
+   *   if (error.message.includes('current version')) {
+   *     alert('Cannot delete the current version. Delete the entire template instead.');
+   *   }
+   * }
+   * ```
+   */
+  async deleteVersion(templateId: number, versionId: number): Promise<void> {
+    try {
+      await apiService.delete(`/templates/${templateId}/versions/${versionId}`);
+    } catch (error) {
+      if (error instanceof Error) {
+        // Handle specific error cases
+        if (error.message.includes('400') || error.message.toLowerCase().includes('current version')) {
+          throw new Error('Cannot delete current version. Please delete the entire template instead.');
+        }
+        if (error.message.includes('403') || error.message.toLowerCase().includes('not authorized')) {
+          throw new Error('You do not have permission to delete this version');
+        }
+        if (error.message.includes('404') || error.message.toLowerCase().includes('not found')) {
+          throw new Error('Template or version not found');
+        }
+        throw new Error(`Failed to delete version: ${error.message}`);
+      }
+      throw new Error('Failed to delete version due to an unknown error');
+    }
+  }
+
+  /**
+   * Delete a comparison
+   *
+   * Permanently deletes a comparison including:
+   * - Comparison record
+   * - All comparison field differences
+   *
+   * **Note:** This does NOT delete the template versions that were compared.
+   *
+   * @param comparisonId - The ID of the comparison to delete
+   * @returns Promise that resolves when deletion is complete
+   * @throws Error if comparison not found, user lacks permission, or deletion fails
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   await templatesService.deleteComparison(42);
+   *   console.log('Comparison deleted successfully');
+   * } catch (error) {
+   *   console.error('Failed to delete comparison:', error.message);
+   * }
+   * ```
+   */
+  async deleteComparison(comparisonId: number): Promise<void> {
+    try {
+      await apiService.delete(`/comparisons/${comparisonId}`);
+    } catch (error) {
+      if (error instanceof Error) {
+        // Handle specific error cases
+        if (error.message.includes('403') || error.message.toLowerCase().includes('not authorized')) {
+          throw new Error('You do not have permission to delete this comparison');
+        }
+        if (error.message.includes('404') || error.message.toLowerCase().includes('not found')) {
+          throw new Error('Comparison not found');
+        }
+        throw new Error(`Failed to delete comparison: ${error.message}`);
+      }
+      throw new Error('Failed to delete comparison due to an unknown error');
     }
   }
 }
